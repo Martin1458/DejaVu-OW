@@ -1,0 +1,131 @@
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>DejaVu - OW (overlay)</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: transparent;
+      overflow: hidden;
+      font-family: "Segoe UI", Arial, sans-serif;
+    }
+    #panel {
+      box-sizing: border-box;
+      width: 100%;
+      padding: 10px;
+      background: rgba(18, 16, 28, 0.72);
+      border-radius: 8px;
+      color: #eee;
+      font-size: 13px;
+    }
+    #title-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    #title {
+      font-weight: 600;
+      opacity: 0.8;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      font-size: 11px;
+    }
+    #match-result {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      display: none;
+    }
+    #match-result.victory { color: #7ee787; }
+    #match-result.defeat { color: #ff8a8a; }
+    #match-result.draw { color: #d9c97a; }
+    #empty {
+      opacity: 0.5;
+      font-size: 12px;
+      padding: 4px 2px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    td {
+      padding: 4px 4px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      vertical-align: middle;
+    }
+    tr:last-child td {
+      border-bottom: none;
+    }
+    .icon-cell {
+      width: 28px;
+    }
+    .icon-cell img, .last-hero-cell img, .icon-placeholder {
+      width: 24px;
+      height: 24px;
+      border-radius: 4px;
+      display: block;
+      object-fit: cover;
+    }
+    .last-hero-cell {
+      width: 22px;
+      opacity: 0.55;
+    }
+    .last-hero-cell img {
+      width: 18px;
+      height: 18px;
+    }
+    .icon-placeholder {
+      background: rgba(255, 255, 255, 0.12);
+      color: rgba(255, 255, 255, 0.5);
+      text-align: center;
+      line-height: 24px;
+      font-size: 12px;
+    }
+    .name-cell {
+      font-weight: 600;
+    }
+    .teammate .name-cell { color: #7ee787; }
+    .enemy .name-cell { color: #ff8a8a; }
+    .count-cell {
+      text-align: right;
+      opacity: 0.85;
+      white-space: nowrap;
+    }
+    .result-cell {
+      width: 20px;
+      text-align: center;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .result-cell.victory { color: #7ee787; }
+    .result-cell.defeat { color: #ff8a8a; }
+    .result-cell.draw { color: #d9c97a; }
+    #footnote {
+      margin-top: 8px;
+      padding-top: 6px;
+      border-top: 1px solid rgba(255, 255, 255, 0.12);
+      font-size: 10px;
+      opacity: 0.55;
+      line-height: 1.4;
+    }
+  </style>
+</head>
+<body>
+  <div id="panel">
+    <div id="title-row">
+      <div id="title">DejaVu - this match</div>
+      <div id="match-result"></div>
+    </div>
+    <div id="empty">waiting for players...</div>
+    <table id="table" style="display:none">
+      <tbody id="rows"></tbody>
+    </table>
+    <div id="footnote">"Together" = matches played with/against this person, including this one. 1 means it's your first time. W/L = your result last time you played together. Faded icon = hero they played last time, if different from now (Standard detail level or higher).</div>
+  </div>
+  <script src="hero-icons.js"></script>
+  <script src="overlay.js"></script>
+</body>
+</html>

@@ -1,0 +1,66 @@
+{
+  "manifest_version": "1",
+  "type": "WebApp",
+  "meta": {
+    "name": "DejaVu - OW",
+    "version": "0.1.0",
+    "minimum-overwolf-version": "0.245.0",
+    "author": "Martin Trasak",
+    "icon": "icons/icon.png",
+    "icon_gray": "icons/icon_gray.png",
+    "description": "Player history & encounter memory for Overwatch"
+  },
+  "permissions": ["FileSystem", "Hotkeys"],
+  "data": {
+    "start_window": "background",
+    "hotkeys": {
+      "toggle_overlay": {
+        "title": "Show/hide DejaVu overlay",
+        "default": "Alt+D"
+      },
+      "open_history": {
+        "title": "Open DejaVu player history",
+        "default": "Alt+H"
+      }
+    },
+    "windows": {
+      "background": {
+        "file": "src/background/background.html",
+        "is_background_page": true
+      },
+      "overlay": {
+        "file": "src/overlay/overlay.html",
+        "transparent": true,
+        "clickthrough": true,
+        "resizable": false,
+        "show_in_taskbar": false,
+        "in_game_only": true,
+        "size": { "width": 300, "height": 460 },
+        "start_position": { "Top": 100, "Left": 20 }
+      },
+      "history": {
+        "file": "src/history/history.html",
+        "transparent": false,
+        "resizable": true,
+        "show_in_taskbar": true,
+        "size": { "width": 900, "height": 600 },
+        "min_size": { "width": 640, "height": 420 },
+        "start_position": { "Top": 80, "Left": 80 }
+      }
+    },
+    "game_targeting": {
+      "type": "dedicated",
+      "game_ids": [10844]
+    },
+    "game_events": [10844],
+    "launch_events": [
+      {
+        "event": "GameLaunch",
+        "event_data": {
+          "game_ids": [10844]
+        },
+        "start_minimized": true
+      }
+    ]
+  }
+}
