@@ -13,10 +13,12 @@
     #panel {
       box-sizing: border-box;
       width: 100%;
-      padding: 10px;
-      background: rgba(18, 16, 28, 0.72);
+      padding: 14px;
+      background: rgba(12, 13, 20, 0.92);
+      border: 1px solid rgba(255, 255, 255, 0.12);
       border-radius: 8px;
-      color: #eee;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+      color: #f4f4f6;
       font-size: 13px;
     }
     #title-row {
@@ -26,89 +28,186 @@
       margin-bottom: 6px;
     }
     #title {
-      font-weight: 600;
-      opacity: 0.8;
+      font-weight: 700;
+      opacity: 0.9;
       letter-spacing: 0.5px;
       text-transform: uppercase;
       font-size: 11px;
     }
     #match-result {
-      font-size: 11px;
+      font-size: 12px;
       font-weight: 700;
       letter-spacing: 0.5px;
       text-transform: uppercase;
       display: none;
     }
-    #match-result.victory { color: #7ee787; }
-    #match-result.defeat { color: #ff8a8a; }
-    #match-result.draw { color: #d9c97a; }
+    #match-result.victory { color: #8bf29b; }
+    #match-result.defeat { color: #ff9d9d; }
+    #match-result.draw { color: #ecd98a; }
     #empty {
-      opacity: 0.5;
+      opacity: 0.65;
       font-size: 12px;
       padding: 4px 2px;
+    }
+    /* Shown only when the background window reports the game data feed has
+       stopped responding. Warmer than the rest of the panel on purpose: it is
+       the one thing here the user has to act on. */
+    #feed-warning {
+      display: none;
+      margin: 2px 0 4px;
+      padding: 8px 10px;
+      border: 1px solid rgba(236, 217, 138, 0.45);
+      border-radius: 6px;
+      background: rgba(236, 217, 138, 0.10);
+      color: #ecd98a;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    #feed-warning strong {
+      display: block;
+      margin-bottom: 2px;
+      font-size: 12px;
+    }
+    #feed-warning span {
+      color: rgba(244, 244, 246, 0.75);
     }
     table {
       width: 100%;
       border-collapse: collapse;
     }
     td {
-      padding: 4px 4px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 6px 7px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.10);
       vertical-align: middle;
     }
-    tr:last-child td {
+    tbody tr:last-child td {
       border-bottom: none;
     }
+    /* The stats moved out of labelled sub-lines into bare columns, so the
+       header is what makes "5-7" mean anything. Kept small and quiet — it's a
+       legend, not content. */
+    th {
+      padding: 0 7px 4px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.20);
+      font-size: 9px;
+      font-weight: 600;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+      text-align: left;
+      color: rgba(244, 244, 246, 0.45);
+      white-space: nowrap;
+    }
+    th.count-cell, th.kd-cell, th.result-cell {
+      text-align: center;
+    }
     .icon-cell {
-      width: 28px;
+      width: 30px;
     }
     .icon-cell img, .last-hero-cell img, .icon-placeholder {
-      width: 24px;
-      height: 24px;
+      width: 26px;
+      height: 26px;
       border-radius: 4px;
       display: block;
       object-fit: cover;
     }
+    /* Holds two heroes now (2026-09-06): the one they played last time you met,
+       and the one they pick most often, which moved here from under the name so
+       the two can be read against each other. Laid out side by side and sized by
+       the "Last / Most" heading rather than the icons under it. */
     .last-hero-cell {
-      width: 22px;
-      opacity: 0.55;
+      width: 72px;
+      opacity: 0.85;
+      white-space: nowrap;
     }
     .last-hero-cell img {
-      width: 18px;
-      height: 18px;
+      border: 1px solid rgba(255, 255, 255, 0.35);
+      width: 20px;
+      height: 20px;
+      display: inline-block;
+      vertical-align: top;
+    }
+    .hero-slot-empty {
+      display: inline-block;
+      width: 22px; /* the 20px icon plus its 1px border either side */
+      height: 22px;
+      vertical-align: top;
+    }
+    .most-played {
+      display: inline-block;
+      margin-left: 6px;
+      text-align: center;
+      vertical-align: top;
+    }
+    .most-played-count {
+      margin-top: 1px;
+      font-size: 9px;
+      font-weight: 600;
+      color: rgba(244, 244, 246, 0.55);
     }
     .icon-placeholder {
-      background: rgba(255, 255, 255, 0.12);
-      color: rgba(255, 255, 255, 0.5);
+      background: rgba(255, 255, 255, 0.14);
+      color: rgba(255, 255, 255, 0.6);
       text-align: center;
-      line-height: 24px;
+      line-height: 26px;
       font-size: 12px;
     }
     .name-cell {
       font-weight: 600;
     }
-    .teammate .name-cell { color: #7ee787; }
-    .enemy .name-cell { color: #ff8a8a; }
+    .name-line {
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .teammate .name-line { color: #8bf29b; }
+    .enemy .name-line { color: #ff9d9d; }
+    .sub-line {
+      margin-top: 2px;
+      font-size: 11px;
+      font-weight: 400;
+      color: rgba(244, 244, 246, 0.7);
+    }
+    .kd-num {
+      font-weight: 700;
+    }
+    .kd-num.kd-you { color: #8bf29b; }
+    .kd-num.kd-them { color: #ff9d9d; }
     .count-cell {
-      text-align: right;
-      opacity: 0.85;
+      width: 54px; /* fits the "DejaVu" heading, which is wider than the counts under it */
+      text-align: center;
       white-space: nowrap;
+      color: rgba(244, 244, 246, 0.9);
+      font-weight: 600;
+    }
+    /* Both K/D columns: kills-you-got then deaths-you-took, colour-coded
+       instead of labelled so the pair fits a narrow column. */
+    .kd-cell {
+      width: 80px; /* the "K/D match" heading is 69px wide; the numbers under it are far narrower */
+      text-align: center;
+      white-space: nowrap;
+      font-size: 12px;
+      color: rgba(244, 244, 246, 0.45);
     }
     .result-cell {
-      width: 20px;
+      width: 74px; /* the "W/L against" heading is 61px wide; the badge under it is far narrower */
       text-align: center;
+    }
+    .result-badge {
+      display: inline-block;
+      min-width: 16px;
+      padding: 2px 6px;
+      border-radius: 4px;
       font-size: 11px;
       font-weight: 700;
     }
-    .result-cell.victory { color: #7ee787; }
-    .result-cell.defeat { color: #ff8a8a; }
-    .result-cell.draw { color: #d9c97a; }
+    .result-badge.victory { background: rgba(139, 242, 155, 0.22); color: #8bf29b; }
+    .result-badge.defeat { background: rgba(255, 157, 157, 0.22); color: #ff9d9d; }
+    .result-badge.draw { background: rgba(236, 217, 138, 0.22); color: #ecd98a; }
     #footnote {
       margin-top: 8px;
       padding-top: 6px;
-      border-top: 1px solid rgba(255, 255, 255, 0.12);
+      border-top: 1px solid rgba(255, 255, 255, 0.14);
       font-size: 10px;
-      opacity: 0.55;
+      opacity: 0.7;
       line-height: 1.4;
     }
   </style>
@@ -116,14 +215,21 @@
 <body>
   <div id="panel">
     <div id="title-row">
-      <div id="title">DejaVu - this match</div>
+      <div id="title">DejaVu</div>
       <div id="match-result"></div>
     </div>
-    <div id="empty">waiting for players...</div>
+    <div id="feed-warning">
+      <strong>Not receiving match data</strong>
+      <span>Overwatch is running but no game data is coming through. Restarting Overwatch usually fixes this. DejaVu picks up again on its own once it does.</span>
+    </div>
+    <div id="empty">Waiting for players...</div>
     <table id="table" style="display:none">
+      <thead id="head"></thead>
       <tbody id="rows"></tbody>
     </table>
-    <div id="footnote">"Together" = matches played with/against this person, including this one. 1 means it's your first time. W/L = your result last time you played together. Faded icon = hero they played last time, if different from now (Standard detail level or higher).</div>
+    <!-- Kept short on purpose: the column headers now carry the labelling this
+         used to do, and every header cell has a fuller tooltip. -->
+    <div id="footnote">DejaVu counts this match, so 1 means it is your first time together. K/D columns are <span class="kd-num kd-you">your kills</span>/<span class="kd-num kd-them">your deaths</span>. Hover a heading to see what it means. Choose what shows here in Settings (Alt+H).</div>
   </div>
   <script src="hero-icons.js"></script>
   <script src="overlay.js"></script>

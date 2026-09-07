@@ -55,8 +55,11 @@
 
     searchEl.addEventListener('input', render);
     document.getElementById('export-btn').addEventListener('click', exportJson);
+    document.getElementById('import-btn').addEventListener('click', function () {
+      document.getElementById('import-file').click();
+    });
+    document.getElementById('import-file').addEventListener('change', importJson);
     document.getElementById('clear-btn').addEventListener('click', clearHistory);
-    document.getElementById('seed-btn').addEventListener('click', seedRandomData);
     document.getElementById('modal-close').addEventListener('click', closeModal);
     document.getElementById('modal-save').addEventListener('click', saveModal);
     document.getElementById('modal-delete').addEventListener('click', deleteFromModal);
@@ -64,15 +67,32 @@
       if (e.target === modalBackdrop) closeModal();
     });
 
+    var settingsBackdrop = document.getElementById('settings-backdrop');
+    document.getElementById('settings-gear-btn').addEventListener('click', function () {
+      settingsBackdrop.classList.remove('hidden');
+    });
+    document.getElementById('settings-close').addEventListener('click', function () {
+      settingsBackdrop.classList.add('hidden');
+    });
+    settingsBackdrop.addEventListener('click', function (e) {
+      if (e.target === settingsBackdrop) settingsBackdrop.classList.add('hidden');
+    });
+    document.querySelectorAll('.preset-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        applyPreset(btn.getAttribute('data-preset'));
+      });
+    });
+
     initTierPicker();
+    initOverlayTogglePicker();
     logDiag('init complete, current tier = ' + DejaVuSettings.getDetailLevel());
     load();
   }
 
   var TIER_HINTS = {
-    basic: 'Tracks who you’ve played with/against, and when. Smallest footprint.',
-    standard: 'Adds one row per match (map/result when available) plus who was there. Grows with matches played.',
-    full: 'Adds personal kill/death tracking against each player, from the kill feed. Same row growth as Standard, slightly wider rows.'
+    basic: 'Remembers who you met and when. Uses the least space.',
+    standard: 'Also remembers who won each match, so win/loss records work.',
+    full: 'Also remembers your kills and deaths against each player.'
   };
 
   function initTierPicker() {
@@ -86,10 +106,82 @@
         if (!radio.checked) return;
         DejaVuSettings.setDetailLevel(radio.value);
         hintEl.textContent = TIER_HINTS[radio.value] || '';
+        refreshOverlayToggleAvailability();
       });
     });
 
     hintEl.textContent = TIER_HINTS[current] || '';
+  }
+
+  // Presets (2026-09-06 ask): a one-click bundle of tier + overlay toggles for
+  // people who don't want to think about the individual pieces below. Still
+  // just calls the same setters the individual controls use, so everything
+  // stays in sync — no separate "preset mode" state to fall out of sync with.
+  var PRESETS = {
+    basic: {
+      tier: 'basic',
+      toggles: { showRecency: true, showRecord: false, showLastHero: false, showMostPlayedHero: false, showLifetimeKD: false, showMatchKD: false }
+    },
+    standard: {
+      tier: 'standard',
+      toggles: { showRecency: true, showRecord: true, showLastHero: true, showMostPlayedHero: true, showLifetimeKD: false, showMatchKD: false }
+    },
+    full: {
+      tier: 'full',
+      toggles: { showRecency: true, showRecord: true, showLastHero: true, showMostPlayedHero: true, showLifetimeKD: true, showMatchKD: true }
+    }
+  };
+
+  function applyPreset(name) {
+    var preset = PRESETS[name];
+    if (!preset) return;
+    logDiag('applyPreset: ' + name);
+
+    DejaVuSettings.setDetailLevel(preset.tier);
+    Object.keys(preset.toggles).forEach(function (key) {
+      DejaVuSettings.setOverlayToggle(key, preset.toggles[key]);
+    });
+
+    // Re-sync the visible controls to match — same elements initTierPicker/
+    // initOverlayTogglePicker already wired, just re-reading the values we
+    // just set rather than re-attaching listeners.
+    document.querySelectorAll('input[name="tier"]').forEach(function (radio) {
+      radio.checked = (radio.value === preset.tier);
+    });
+    document.getElementById('tier-hint').textContent = TIER_HINTS[preset.tier] || '';
+    document.querySelectorAll('input[data-toggle]').forEach(function (cb) {
+      var key = cb.getAttribute('data-toggle');
+      cb.checked = DejaVuSettings.getOverlayToggle(key);
+    });
+    refreshOverlayToggleAvailability();
+  }
+
+  // Independent of the tier picker above: what's tracked (tier) vs. what the
+  // overlay actually shows out of it (these checkboxes) are separate
+  // decisions. A toggle whose data isn't tracked at the current tier is
+  // disabled rather than hidden — so its saved preference survives raising
+  // the tier later without needing to be re-checked.
+  function initOverlayTogglePicker() {
+    var checkboxes = document.querySelectorAll('input[data-toggle]');
+    checkboxes.forEach(function (cb) {
+      var key = cb.getAttribute('data-toggle');
+      cb.checked = DejaVuSettings.getOverlayToggle(key);
+      cb.addEventListener('change', function () {
+        DejaVuSettings.setOverlayToggle(key, cb.checked);
+      });
+    });
+    refreshOverlayToggleAvailability();
+  }
+
+  function refreshOverlayToggleAvailability() {
+    var tier = DejaVuSettings.getDetailLevel();
+    document.querySelectorAll('[data-toggle-row]').forEach(function (rowEl) {
+      var requires = rowEl.getAttribute('data-requires'); // absent, 'standard', or 'full'
+      var available = !requires ? true : (requires === 'full' ? tier === 'full' : tier !== 'basic');
+      rowEl.classList.toggle('disabled', !available);
+      var cb = rowEl.querySelector('input[data-toggle]');
+      if (cb) cb.disabled = !available;
+    });
   }
 
   function load() {
@@ -107,7 +199,7 @@
       logDiag('load: render + renderLeaderboards complete');
     }).catch(function (err) {
       logDiag('load: failed — ' + err);
-      statusEl.textContent = 'failed to load: ' + err;
+      statusEl.textContent = 'Could not load your history: ' + err;
     });
   }
 
@@ -128,7 +220,7 @@
     if (!top.length) {
       var empty = document.createElement('li');
       empty.className = 'leaderboard-empty';
-      empty.textContent = 'nobody yet';
+      empty.textContent = 'Nobody yet';
       el.appendChild(empty);
       return;
     }
@@ -158,9 +250,8 @@
     if (!record) return '-';
     var wins = record[winKey] || 0;
     var losses = record[lossKey] || 0;
-    var draws = record[drawKey] || 0;
-    if (!wins && !losses && !draws) return '-';
-    return wins + '-' + losses + (draws ? '-' + draws : '');
+    if (!wins && !losses) return '-';
+    return wins + '-' + losses;
   }
 
   function render() {
@@ -194,14 +285,14 @@
       tr.innerHTML =
         '<td>' + escapeHtml(p.display_name) + '</td>' +
         '<td class="tag">' + escapeHtml(p.battlenet_tag) + '</td>' +
-        '<td>' + p.encounter_count + '</td>' +
-        '<td>' + p.as_teammate_count + '</td>' +
-        '<td>' + p.as_enemy_count + '</td>' +
+        '<td>' + numCell(p.encounter_count) + '</td>' +
+        '<td>' + numCell(p.as_teammate_count) + '</td>' +
+        '<td>' + numCell(p.as_enemy_count) + '</td>' +
         '<td>' + formatWL(record, 'wins', 'losses', 'draws') + '</td>' +
         '<td>' + formatWL(record, 'teammate_wins', 'teammate_losses', 'teammate_draws') + '</td>' +
         '<td>' + formatWL(record, 'enemy_wins', 'enemy_losses', 'enemy_draws') + '</td>' +
-        '<td>' + (p.kills_on_them || 0) + '</td>' +
-        '<td>' + (p.deaths_to_them || 0) + '</td>' +
+        '<td>' + numCell(p.kills_on_them) + '</td>' +
+        '<td>' + numCell(p.deaths_to_them) + '</td>' +
         '<td>' + formatDate(p.first_seen) + '</td>' +
         '<td>' + formatDate(p.last_seen) + '</td>';
       tr.addEventListener('click', function () { openModal(p.battlenet_tag); });
@@ -209,10 +300,10 @@
     });
 
     if (!allPlayers.length) {
-      statusEl.textContent = 'no players recorded yet — play a match to start building history';
+      statusEl.textContent = 'No players yet. Play a match to start building history.';
       statusEl.style.display = '';
     } else if (!filtered.length) {
-      statusEl.textContent = 'no matches for "' + query + '"';
+      statusEl.textContent = 'Nobody matches "' + query + '"';
       statusEl.style.display = '';
     } else {
       statusEl.style.display = 'none';
@@ -225,6 +316,17 @@
     var div = document.createElement('div');
     div.textContent = str == null ? '' : str;
     return div.innerHTML;
+  }
+
+  // The count columns below go into innerHTML unescaped because they're
+  // supposed to be numbers this app wrote itself. importPlayers now guarantees
+  // that for anything arriving from a file, but records imported before that
+  // validation existed are already in the store, so coerce here too rather
+  // than trusting the type — a non-numeric value renders as 0 instead of
+  // reaching the DOM as markup.
+  function numCell(value) {
+    var n = Number(value);
+    return isFinite(n) ? n : 0;
   }
 
   function pad(n) { return n < 10 ? '0' + n : '' + n; }
@@ -245,32 +347,74 @@
       overwolf.io.enums.eEncoding.UTF8,
       false,
       function (result) {
-        statusEl.textContent = result.success ? ('saved to ' + filePath) : ('failed: ' + result.error);
+        statusEl.textContent = result.success ? ('Saved to ' + filePath) : ('Could not save: ' + result.error);
       }
     );
   }
 
+  // Plan §11 G3. Reads the picked file with the DOM File API (not overwolf.io —
+  // <input type="file"> already gives us the file's contents directly, and
+  // this window's Chromium context supports it same as any web page) rather
+  // than asking the user to type a path. See DejaVuStorage.importPlayers for
+  // the actual merge rule.
+  function importJson(event) {
+    var statusEl = document.getElementById('import-status');
+    var file = event.target.files && event.target.files[0];
+    event.target.value = ''; // allow re-selecting the same file next time
+    if (!file) return;
+
+    statusEl.textContent = 'Reading ' + file.name + '...';
+
+    var reader = new FileReader();
+    reader.onerror = function () {
+      logDiag('importJson: failed to read ' + file.name);
+      statusEl.textContent = 'Could not read that file.';
+    };
+    reader.onload = function () {
+      var records;
+      try {
+        records = JSON.parse(reader.result);
+      } catch (e) {
+        logDiag('importJson: invalid JSON in ' + file.name + ': ' + e);
+        statusEl.textContent = 'That file is not valid JSON.';
+        return;
+      }
+      if (!Array.isArray(records)) {
+        logDiag('importJson: ' + file.name + ' is not an array');
+        statusEl.textContent = 'That does not look like a DejaVu export.';
+        return;
+      }
+
+      DejaVuStorage.importPlayers(records).then(function (summary) {
+        logDiag('importJson: ' + JSON.stringify(summary));
+        // skipped covers records the store refused as unreadable (no usable
+        // battle tag). It used to be counted and then dropped from the
+        // message, which meant a half-unreadable file looked like a clean
+        // import — worth saying out loud now that validation rejects more.
+        var message = 'Added ' + summary.added + ' and updated ' + summary.replaced + '. Kept ' + summary.kept + ' you already had.';
+        if (summary.skipped) message += ' Ignored ' + summary.skipped + ' unreadable entries.';
+        statusEl.textContent = message;
+        load();
+      }).catch(function (err) {
+        logDiag('importJson: importPlayers failed: ' + err);
+        statusEl.textContent = 'Could not import: ' + err;
+      });
+    };
+    reader.readAsText(file);
+  }
+
   function clearHistory() {
     var statusEl = document.getElementById('clear-status');
-    if (!confirm('Delete all ' + allPlayers.length + ' recorded player(s)? This cannot be undone.')) return;
+    if (!confirm('Delete all ' + allPlayers.length + ' players? This cannot be undone.')) return;
 
     DejaVuStorage.clearAllPlayers().then(function () {
-      statusEl.textContent = 'cleared';
+      statusEl.textContent = 'History cleared.';
       load();
     }).catch(function (err) {
-      statusEl.textContent = 'failed: ' + err;
+      statusEl.textContent = 'Could not clear history: ' + err;
     });
   }
 
-  function seedRandomData() {
-    var statusEl = document.getElementById('seed-status');
-    DejaVuStorage.seedRandomPlayers(20).then(function (count) {
-      statusEl.textContent = 'added ' + count + ' fake player(s)';
-      load();
-    }).catch(function (err) {
-      statusEl.textContent = 'failed: ' + err;
-    });
-  }
 
   function openModal(tag) {
     logDiag('openModal: ' + tag);
@@ -288,7 +432,7 @@
     modalTags.value = (player.tags || []).join(', ');
 
     renderNameHistory(player);
-    modalRecord.textContent = 'loading...';
+    modalRecord.textContent = 'Loading...';
     modalBackdrop.classList.remove('hidden');
 
     DejaVuStorage.getRecordAgainst(tag).then(function (summary) {
@@ -296,7 +440,7 @@
       renderRecord(summary, player);
     }).catch(function (err) {
       logDiag('openModal: getRecordAgainst failed for ' + tag + ': ' + err);
-      modalRecord.textContent = 'failed to load: ' + err;
+      modalRecord.textContent = 'Could not load: ' + err;
     });
   }
 
@@ -310,13 +454,13 @@
     modalNames.innerHTML = '';
     var history = player.name_history || [];
     if (!history.length) {
-      modalNames.innerHTML = '<div class="leaderboard-empty">no history recorded</div>';
+      modalNames.innerHTML = '<div class="leaderboard-empty">Always seen under this name</div>';
       return;
     }
     // most recent first
     history.slice().reverse().forEach(function (entry) {
       var div = document.createElement('div');
-      div.textContent = entry.name + ' — ' + formatDate(entry.timestamp);
+      div.textContent = entry.name + ' (' + formatDate(entry.timestamp) + ')';
       modalNames.appendChild(div);
     });
   }
@@ -325,20 +469,17 @@
     var lines = [];
 
     if (summary) {
-      lines.push('Overall: ' + summary.wins + 'W–' + summary.losses + 'L' +
-        (summary.draws ? '–' + summary.draws + 'D' : ''));
-      lines.push('As teammates: ' + summary.teammate_wins + 'W–' + summary.teammate_losses + 'L' +
-        (summary.teammate_draws ? '–' + summary.teammate_draws + 'D' : ''));
-      lines.push('As enemies: ' + summary.enemy_wins + 'W–' + summary.enemy_losses + 'L' +
-        (summary.enemy_draws ? '–' + summary.enemy_draws + 'D' : ''));
+      lines.push('Overall: won ' + summary.wins + ', lost ' + summary.losses);
+      lines.push('On your team: won ' + summary.teammate_wins + ', lost ' + summary.teammate_losses);
+      lines.push('Against you: won ' + summary.enemy_wins + ', lost ' + summary.enemy_losses);
     } else {
-      lines.push('No completed matches on record together (needs Standard detail level or higher).');
+      lines.push('No finished matches together yet.');
     }
 
     var kills = player.kills_on_them || 0;
     var deaths = player.deaths_to_them || 0;
     if (kills || deaths) {
-      lines.push('Kills on them: ' + kills + '  ·  Deaths to them: ' + deaths);
+      lines.push('You killed them ' + kills + ', they killed you ' + deaths + '.');
     }
 
     var streakLine = '';
@@ -359,13 +500,13 @@
       notes: modalNotes.value,
       tags: tags
     }).then(function () {
-      modalStatus.textContent = 'saved';
+      modalStatus.textContent = 'Saved.';
       return DejaVuStorage.getAllPlayers();
     }).then(function (players) {
       allPlayers = players;
       render();
     }).catch(function (err) {
-      modalStatus.textContent = 'failed: ' + err;
+      modalStatus.textContent = 'Could not save: ' + err;
     });
   }
 
@@ -373,13 +514,13 @@
     if (!activeTag) return;
     var player = allPlayers.filter(function (p) { return p.battlenet_tag === activeTag; })[0];
     var label = player ? player.display_name : activeTag;
-    if (!confirm('Delete all history for ' + label + '? This cannot be undone.')) return;
+    if (!confirm('Forget ' + label + ' completely? This cannot be undone.')) return;
 
     DejaVuStorage.deletePlayer(activeTag).then(function () {
       closeModal();
       load();
     }).catch(function (err) {
-      modalStatus.textContent = 'failed: ' + err;
+      modalStatus.textContent = 'Could not delete: ' + err;
     });
   }
 

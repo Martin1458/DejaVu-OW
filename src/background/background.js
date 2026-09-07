@@ -1,25 +1,44 @@
 var logFilePath = DejaVuFileLog.init();
 DejaVuFileLog.log('background controller (re)started');
+DejaVuFileLog.logImportant('background controller (re)started');
 
 DejaVuStorage.getAllPlayers().then(function (players) {
   var line = 'storage ready — ' + players.length + ' known player(s)';
   console.log('[DejaVu] ' + line);
   DejaVuFileLog.log(line);
+  DejaVuFileLog.logImportant(line);
 });
 
 DejaVuStorage.migrateLegacyResults().then(function (fixed) {
   var line = 'migrateLegacyResults: fixed ' + fixed + ' encounter row(s)';
   console.log('[DejaVu] ' + line);
   DejaVuFileLog.log(line);
+  DejaVuFileLog.logImportant(line);
 });
 
 DejaVuMatchSession.init({
   onPlayerRecognized: DejaVuOverlayController.handlePlayerRecognized,
   onMatchReset: DejaVuOverlayController.resetMatch,
-  onMatchResult: DejaVuOverlayController.handleMatchResult
+  onMatchResult: DejaVuOverlayController.handleMatchResult,
+  onRosterSync: DejaVuOverlayController.syncRoster
+});
+
+// Overwolf persists a hotkey assignment once it has registered it, exactly the
+// way it persists window bounds (see window-utils.js's ensureSize) — so the
+// manifest's `default` only seeds a binding that has never existed, and
+// changing it does not rebind an existing install. Logged at startup so the
+// binding actually in force is a one-line grep instead of guesswork; changing
+// it for real is done in Overwolf's own settings, not here, since overwriting
+// it programmatically would trample a binding the user may have chosen.
+overwolf.settings.hotkeys.get(function (result) {
+  var line = 'hotkeys in force: ' + JSON.stringify(result && result.games) + ' global=' + JSON.stringify(result && result.globals);
+  console.log('[DejaVu] ' + line);
+  DejaVuFileLog.log(line);
+  DejaVuFileLog.logImportant(line);
 });
 
 overwolf.settings.hotkeys.onPressed.addListener(function (event) {
+  DejaVuFileLog.log('hotkey pressed: ' + (event && event.name));
   if (event.name === 'toggle_overlay') {
     DejaVuOverlayController.toggleVisibility();
   }
@@ -55,6 +74,12 @@ DejaVuGep.init({
     var line = 'match event: ' + name + ' ' + JSON.stringify(data);
     console.log('[DejaVu] ' + line);
     DejaVuFileLog.log(line);
+    // match_start/match_end are rare, high-value boundary markers — worth
+    // keeping in the durable lifecycle log alongside GEP registration events,
+    // unlike the rest of match-event traffic (kill_feed etc.).
+    if (name === 'match_start' || name === 'match_end') {
+      DejaVuFileLog.logImportant(line);
+    }
     DejaVuMatchSession.handleMatchEvent(name, data);
     if (name === 'match_end') {
       DejaVuOverlayController.handleMatchEnd();
@@ -69,7 +94,26 @@ DejaVuGep.init({
     console.log('[DejaVu] ' + line);
     DejaVuFileLog.log(line);
     DejaVuMatchSession.handleMatchInfo(fields);
-  }
+  },
+
+  // First-run nudge (plan §11, 2026-09-05): doesn't gate recording — Basic
+  // tier already applies by default regardless — just invites the user to
+  // consciously look at detail level / overlay toggles at least once. Fires
+  // on every detection while setup is still incomplete (not just the very
+  // first), so dismissing the popup without touching settings brings it back
+  // next launch rather than silently going away.
+  onGameDetected: function () {
+    if (!DejaVuSettings.isSetupComplete()) {
+      DejaVuFileLog.log('setup not complete — showing onboarding popup');
+      DejaVuWindows.show('onboarding');
+    }
+  },
+
+  // A dead GEP feed used to be completely silent from the user's side (§12):
+  // the overlay showed the same "waiting for players" it shows before any
+  // normal match, for the whole session. Route the state through to the panel
+  // so it can say what's actually wrong and what to do about it.
+  onFeedStateChanged: DejaVuOverlayController.handleFeedStateChanged
 });
 
 console.log('[DejaVu] background controller started, waiting for Overwatch... (logging to ' + logFilePath + ')');

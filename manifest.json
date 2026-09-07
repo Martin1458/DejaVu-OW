@@ -16,7 +16,7 @@
     "hotkeys": {
       "toggle_overlay": {
         "title": "Show/hide DejaVu overlay",
-        "default": "Alt+D"
+        "default": "Alt+G"
       },
       "open_history": {
         "title": "Open DejaVu player history",
@@ -35,7 +35,7 @@
         "resizable": false,
         "show_in_taskbar": false,
         "in_game_only": true,
-        "size": { "width": 300, "height": 460 },
+        "size": { "width": 800, "height": 950 },
         "start_position": { "Top": 100, "Left": 20 }
       },
       "history": {
@@ -46,6 +46,15 @@
         "size": { "width": 900, "height": 600 },
         "min_size": { "width": 640, "height": 420 },
         "start_position": { "Top": 80, "Left": 80 }
+      },
+      "onboarding": {
+        "file": "src/onboarding/onboarding.html",
+        "transparent": false,
+        "resizable": false,
+        "show_in_taskbar": false,
+        "in_game_only": true,
+        "size": { "width": 380, "height": 320 },
+        "start_position": { "Top": 160, "Left": 760 }
       }
     },
     "game_targeting": {

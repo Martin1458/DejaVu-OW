@@ -64,13 +64,19 @@ var DejaVuStorage = (function () {
   // Basic-tier write: upsert a player's aggregate record for one recognized
   // sighting this match. isTeammate may be undefined if GEP hasn't resolved
   // team info for this slot yet — the sighting is still recorded, just without
-  // updating the teammate/enemy split.
+  // updating the teammate/enemy split. matchNumber (plan §11, 2026-09-06) is
+  // DejaVuSettings' running total-matches-played counter as of *this* match —
+  // stashed as last_seen_match_number so a later sighting can compute "N
+  // matches ago" by diffing against the counter's value at that later time,
+  // without needing per-player match logs. Optional/nullable so callers that
+  // don't have it yet (or legacy records from before this field existed)
+  // degrade to "unknown" rather than a wrong number.
   //
   // Also owns display-name history (plan §11 A5) and migrates older records
-  // that predate notes/tags/name_history in place, rather than needing a DB
-  // version bump — those fields are just plain properties IndexedDB doesn't
-  // care about until something reads/writes them.
-  function recordEncounter(tag, displayName, isTeammate) {
+  // that predate notes/tags/name_history/hero_counts in place, rather than
+  // needing a DB version bump — those fields are just plain properties
+  // IndexedDB doesn't care about until something reads/writes them.
+  function recordEncounter(tag, displayName, isTeammate, matchNumber) {
     return open().then(function (db) {
       return new Promise(function (resolve, reject) {
         var tx = db.transaction('players', 'readwrite');
@@ -88,17 +94,21 @@ var DejaVuStorage = (function () {
             tags: [],
             first_seen: now,
             last_seen: now,
+            last_seen_match_number: null,
             encounter_count: 0,
             as_teammate_count: 0,
             as_enemy_count: 0,
             kills_on_them: 0,
-            deaths_to_them: 0
+            deaths_to_them: 0,
+            hero_counts: {}
           };
 
           if (record.notes === undefined) record.notes = '';
           if (record.tags === undefined) record.tags = [];
           if (record.kills_on_them === undefined) record.kills_on_them = 0;
           if (record.deaths_to_them === undefined) record.deaths_to_them = 0;
+          if (record.last_seen_match_number === undefined) record.last_seen_match_number = null;
+          if (!record.hero_counts) record.hero_counts = {};
           if (!record.name_history) {
             record.name_history = record.display_name ?
               [{ name: record.display_name, timestamp: record.first_seen || now }] : [];
@@ -110,6 +120,7 @@ var DejaVuStorage = (function () {
           }
 
           record.last_seen = now;
+          if (matchNumber != null) record.last_seen_match_number = matchNumber;
           record.encounter_count += 1;
           if (isTeammate === true) record.as_teammate_count += 1;
           else if (isTeammate === false) record.as_enemy_count += 1;
@@ -211,12 +222,21 @@ var DejaVuStorage = (function () {
     });
   }
 
+  // "UNKNOWN" is GEP's own placeholder for a hero it hasn't resolved (or has
+  // just nulled out at match_end, §10) — not a hero. Storing it verbatim made
+  // it indistinguishable from a real pick on read, so it's normalized to null
+  // at every write/read boundary here.
+  function realHeroName(heroName) {
+    return (heroName && heroName !== 'UNKNOWN') ? heroName : null;
+  }
+
   // Standard tier: links one recognized player to one match (§4.3). was_teammate
   // may be undefined if GEP hasn't resolved team info for this slot yet. heroName
   // (plan §11 C2) is whatever hero they were on at the moment we wrote this row —
-  // written once per match same as everything else here, so it's their hero as of
-  // the point in the match recognition happened, not necessarily their last hero
-  // of the match if they swapped afterward.
+  // in practice almost always "UNKNOWN"/null, since recognition happens within a
+  // second or two of match_start and GEP resolves heroes well after that. The row
+  // is created here and its hero filled in later by updateParticipantHero once a
+  // real one arrives, rather than being written once and left as a placeholder.
   function addEncounterParticipant(encounterId, tag, wasTeammate, heroName) {
     return open().then(function (db) {
       return new Promise(function (resolve, reject) {
@@ -225,8 +245,40 @@ var DejaVuStorage = (function () {
           encounter_id: encounterId,
           battlenet_tag: tag,
           was_teammate: wasTeammate,
-          hero_name: heroName || null
+          hero_name: realHeroName(heroName)
         });
+        tx.oncomplete = function () { resolve(); };
+        tx.onerror = function () { reject(tx.error); };
+      });
+    });
+  }
+
+  // Fills in (or replaces) the hero on this match's participant row for one
+  // player — called from match-session.js's hero-change tracking, so the row
+  // ends up holding the last real hero they were seen on this match instead of
+  // whatever placeholder was current at first sighting. Silently no-ops if the
+  // row isn't there yet; the next hero change will catch it.
+  function updateParticipantHero(encounterId, tag, heroName) {
+    var hero = realHeroName(heroName);
+    if (!encounterId || !hero) return Promise.resolve();
+
+    return open().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction('encounter_participants', 'readwrite');
+        var idx = tx.objectStore('encounter_participants').index('encounter_id');
+        var cursorReq = idx.openCursor(IDBKeyRange.only(encounterId));
+        cursorReq.onsuccess = function (event) {
+          var cursor = event.target.result;
+          if (!cursor) return;
+          if (cursor.value.battlenet_tag === tag) {
+            var row = cursor.value;
+            row.hero_name = hero;
+            cursor.update(row);
+          } else {
+            cursor.continue();
+          }
+        };
+
         tx.oncomplete = function () { resolve(); };
         tx.onerror = function () { reject(tx.error); };
       });
@@ -330,12 +382,48 @@ var DejaVuStorage = (function () {
     });
   }
 
+  // Plan §11 ask (2026-09-06): "what character they play the most", not just
+  // the last one — people swap heroes mid-match, so a single `hero_name` per
+  // match (encounter_participants, used by getLastHero) can't answer that.
+  // match-session.js calls this once per detected hero *change* (including
+  // the first sighting), not per roster tick, so a full match on one hero is
+  // one increment, not hundreds — a rough "how often picked" proxy rather
+  // than time-weighted, but simple and avoids inflating by tick frequency.
+  // Standard+ tier only, same as the rest of the hero-history features (C2).
+  function bumpHeroPick(tag, heroName) {
+    if (!heroName) return Promise.resolve();
+    return open().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction('players', 'readwrite');
+        var store = tx.objectStore('players');
+
+        var getReq = store.get(tag);
+        getReq.onsuccess = function () {
+          var record = getReq.result;
+          if (!record) return; // sighting write should always precede this — nothing to bump onto
+          if (!record.hero_counts) record.hero_counts = {};
+          record.hero_counts[heroName] = (record.hero_counts[heroName] || 0) + 1;
+          store.put(record);
+        };
+
+        tx.oncomplete = function () { resolve(); };
+        tx.onerror = function () { reject(tx.error); };
+      });
+    });
+  }
+
   // Hero they were on the most recent time you were in a match together (plan
   // §11 C2), regardless of that match's result — separate from getLastResult
   // because a match can have a hero on record without a resolved outcome yet.
+  // Rows written before updateParticipantHero existed overwhelmingly hold the
+  // literal string "UNKNOWN" (GEP's unresolved-hero placeholder, captured at
+  // first sighting), which a bare truthiness filter happily treated as a real
+  // hero — the overlay then drew a "?" placeholder for every repeat player
+  // instead of an icon. realHeroName drops those the same way the write path
+  // now does, so legacy rows read as "no hero on record" rather than garbage.
   function getLastHero(tag) {
     return getParticipantsForPlayer(tag).then(function (participantRows) {
-      var withHero = participantRows.filter(function (p) { return p.hero_name; });
+      var withHero = participantRows.filter(function (p) { return realHeroName(p.hero_name); });
       if (!withHero.length) return null;
 
       return open().then(function (db) {
@@ -357,6 +445,49 @@ var DejaVuStorage = (function () {
             req.onerror = function () {
               pending -= 1;
               if (pending === 0) resolve(best ? best.hero_name : null);
+            };
+          });
+        });
+      });
+    });
+  }
+
+  // Which side they were on the most recent time you shared a match (plan §11,
+  // 2026-09-06 ask: "did I play with or against them last time"). Deliberately
+  // separate from getLastHero even though both walk the same rows: getLastHero
+  // wants the most recent match that has a *real hero* on record, whereas this
+  // wants the most recent match full stop, since the relationship is known for
+  // every row (was_teammate comes from identity fields, which §10 confirms GEP
+  // never nulls out) while the hero often isn't. Standard+ tier only, same as
+  // everything else backed by encounter_participants.
+  function getLastEncounter(tag) {
+    return getParticipantsForPlayer(tag).then(function (participantRows) {
+      if (!participantRows.length) return null;
+
+      return open().then(function (db) {
+        return new Promise(function (resolve, reject) {
+          var store = db.transaction('encounters', 'readonly').objectStore('encounters');
+          var best = null;
+          var pending = participantRows.length;
+
+          participantRows.forEach(function (p) {
+            var req = store.get(p.encounter_id);
+            req.onsuccess = function () {
+              var enc = req.result;
+              if (enc && (!best || enc.timestamp > best.timestamp)) {
+                best = {
+                  encounter_id: enc.encounter_id,
+                  timestamp: enc.timestamp,
+                  was_teammate: p.was_teammate,
+                  hero_name: realHeroName(p.hero_name)
+                };
+              }
+              pending -= 1;
+              if (pending === 0) resolve(best);
+            };
+            req.onerror = function () {
+              pending -= 1;
+              if (pending === 0) resolve(best);
             };
           });
         });
@@ -525,53 +656,117 @@ var DejaVuStorage = (function () {
     });
   }
 
-  // Dev/test-only: fills the players store with plausible-looking fake records
-  // so UI work (sorting, search, layout with real row counts) doesn't require
-  // grinding actual matches. Not wired to anything a real user would trigger.
-  function seedRandomPlayers(count) {
-    count = count || 20;
-    var SYLLABLES = ['Sha', 'Dow', 'Vex', 'Nyx', 'Kai', 'Zor', 'Ember', 'Frost', 'Rogue', 'Nova',
-      'Pix', 'El', 'Ash', 'Storm', 'Grim', 'Luna', 'Byte', 'Rune', 'Cinder', 'Vor'];
-    var DAY = 86400000;
+  // Import is the only path where records enter the store without this app
+  // having written them — a hand-edited, corrupted or hostile export can carry
+  // any type in any field. That matters because the History Browser
+  // interpolates several of these fields straight into innerHTML: a record
+  // whose encounter_count is the string "<img src=x onerror=...>" executed as
+  // markup when the table drew it (reproduced 2026-09-06 against the real
+  // history.html). Coercing every field to its schema type on the way in means
+  // a bad file can't put markup — or an object where a number belongs — into
+  // the store at all, instead of every present and future read path having to
+  // re-check. Returns null for a record with no usable battlenet_tag, which
+  // the caller counts as skipped.
+  function asText(value) {
+    return typeof value === 'string' ? value : null;
+  }
 
-    function randomName() {
-      var parts = 1 + Math.floor(Math.random() * 2);
-      var name = '';
-      for (var i = 0; i < parts; i++) name += SYLLABLES[Math.floor(Math.random() * SYLLABLES.length)];
-      return name;
+  function asCount(value) {
+    var n = Number(value);
+    return (isFinite(n) && n > 0) ? Math.floor(n) : 0;
+  }
+
+  function asTimestamp(value) {
+    var n = Number(value);
+    return (isFinite(n) && n > 0) ? n : null;
+  }
+
+  function sanitizeImportedPlayer(incoming) {
+    if (!incoming || typeof incoming !== 'object') return null;
+    var tag = asText(incoming.battlenet_tag);
+    if (!tag) return null;
+
+    var nameHistory = [];
+    if (Array.isArray(incoming.name_history)) {
+      incoming.name_history.forEach(function (entry) {
+        if (!entry || typeof entry !== 'object') return;
+        var name = asText(entry.name);
+        if (name) nameHistory.push({ name: name, timestamp: asTimestamp(entry.timestamp) });
+      });
     }
 
+    var tags = [];
+    if (Array.isArray(incoming.tags)) {
+      incoming.tags.forEach(function (t) {
+        var text = asText(t);
+        if (text) tags.push(text);
+      });
+    }
+
+    var heroCounts = {};
+    if (incoming.hero_counts && typeof incoming.hero_counts === 'object' && !Array.isArray(incoming.hero_counts)) {
+      Object.keys(incoming.hero_counts).forEach(function (hero) {
+        var count = asCount(incoming.hero_counts[hero]);
+        if (count > 0) heroCounts[hero] = count;
+      });
+    }
+
+    return {
+      battlenet_tag: tag,
+      display_name: asText(incoming.display_name),
+      name_history: nameHistory,
+      notes: asText(incoming.notes) || '',
+      tags: tags,
+      first_seen: asTimestamp(incoming.first_seen),
+      last_seen: asTimestamp(incoming.last_seen),
+      last_seen_match_number: asCount(incoming.last_seen_match_number) || null,
+      encounter_count: asCount(incoming.encounter_count),
+      as_teammate_count: asCount(incoming.as_teammate_count),
+      as_enemy_count: asCount(incoming.as_enemy_count),
+      kills_on_them: asCount(incoming.kills_on_them),
+      deaths_to_them: asCount(incoming.deaths_to_them),
+      hero_counts: heroCounts
+    };
+  }
+
+  // Plan §11 G3: restore/merge a previously-exported `players` array (see
+  // history.js's exportJson — export only ever wrote the `players` store, not
+  // encounters/encounter_participants, so that's all import can restore too;
+  // match-level detail from an old install is simply not part of what export
+  // ever captured). Per tag: a player not already known locally is inserted
+  // as-is; a tag that already exists keeps whichever record has the higher
+  // encounter_count (treated as a proxy for "more complete/more recent"),
+  // replacing entirely rather than field-merging so a kept record's notes/tags
+  // aren't left inconsistent with the rest of it. Returns counts rather than
+  // silently succeeding so the caller can tell the user what actually happened.
+  function importPlayers(records) {
+    if (!Array.isArray(records)) return Promise.reject(new Error('import expects an array of player records'));
     return open().then(function (db) {
       return new Promise(function (resolve, reject) {
         var tx = db.transaction('players', 'readwrite');
         var store = tx.objectStore('players');
-        var now = Date.now();
+        var added = 0, replaced = 0, kept = 0, skipped = 0;
 
-        for (var i = 0; i < count; i++) {
-          var name = randomName();
-          var tag = name + '#' + (1000 + Math.floor(Math.random() * 90000));
-          var encounterCount = 1 + Math.floor(Math.random() * 40);
-          var teammateCount = Math.floor(Math.random() * (encounterCount + 1));
-          var firstSeen = now - Math.floor(Math.random() * 120) * DAY;
-          var lastSeen = firstSeen + Math.floor(Math.random() * (now - firstSeen));
+        records.forEach(function (raw) {
+          var incoming = sanitizeImportedPlayer(raw);
+          if (!incoming) { skipped++; return; }
 
-          store.put({
-            battlenet_tag: tag,
-            display_name: name.toUpperCase(),
-            name_history: [{ name: name.toUpperCase(), timestamp: firstSeen }],
-            notes: '',
-            tags: [],
-            first_seen: firstSeen,
-            last_seen: lastSeen,
-            encounter_count: encounterCount,
-            as_teammate_count: teammateCount,
-            as_enemy_count: encounterCount - teammateCount,
-            kills_on_them: Math.floor(Math.random() * encounterCount * 3),
-            deaths_to_them: Math.floor(Math.random() * encounterCount * 3)
-          });
-        }
+          var getReq = store.get(incoming.battlenet_tag);
+          getReq.onsuccess = function () {
+            var existing = getReq.result;
+            if (!existing) {
+              store.put(incoming);
+              added++;
+            } else if ((incoming.encounter_count || 0) > (existing.encounter_count || 0)) {
+              store.put(incoming);
+              replaced++;
+            } else {
+              kept++;
+            }
+          };
+        });
 
-        tx.oncomplete = function () { resolve(count); };
+        tx.oncomplete = function () { resolve({ added: added, replaced: replaced, kept: kept, skipped: skipped }); };
         tx.onerror = function () { reject(tx.error); };
       });
     });
@@ -587,13 +782,16 @@ var DejaVuStorage = (function () {
     createEncounter: createEncounter,
     updateEncounter: updateEncounter,
     addEncounterParticipant: addEncounterParticipant,
+    updateParticipantHero: updateParticipantHero,
     recordKillEvent: recordKillEvent,
+    bumpHeroPick: bumpHeroPick,
     getParticipantsForPlayer: getParticipantsForPlayer,
     getLastResult: getLastResult,
     getLastHero: getLastHero,
+    getLastEncounter: getLastEncounter,
     getRecordAgainst: getRecordAgainst,
     getAllRecords: getAllRecords,
+    importPlayers: importPlayers,
     clearAllPlayers: clearAllPlayers,
-    seedRandomPlayers: seedRandomPlayers
   };
 })();

@@ -29,7 +29,31 @@
     }
     h1 {
       font-size: 16px;
-      margin: 0 0 12px 0;
+      margin: 0;
+    }
+    #main-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .icon-btn {
+      display: block;
+      width: 30px;
+      height: 30px;
+      padding: 0;
+      margin: 0;
+      background: #221f2e;
+      border: 1px solid #383349;
+      border-radius: 4px;
+      color: #eee;
+      font-size: 15px;
+      line-height: 28px;
+      text-align: center;
+      cursor: pointer;
+    }
+    .icon-btn:hover {
+      background: #2c2840;
     }
     #search {
       width: 100%;
@@ -149,7 +173,7 @@
     button.danger:hover {
       background: #4a2733;
     }
-    #export-status, #clear-status {
+    #export-status, #import-status, #clear-status {
       font-size: 11px;
       opacity: 0.65;
       min-height: 14px;
@@ -184,7 +208,7 @@
     .hidden {
       display: none !important;
     }
-    #modal-backdrop {
+    #modal-backdrop, #settings-backdrop {
       position: fixed;
       inset: 0;
       background: rgba(0, 0, 0, 0.55);
@@ -192,6 +216,34 @@
       align-items: center;
       justify-content: center;
       z-index: 10;
+    }
+    #settings-modal {
+      width: 420px;
+      max-height: 80vh;
+      overflow-y: auto;
+      background: #1e1b28;
+      border: 1px solid #2a2636;
+      border-radius: 8px;
+      padding: 16px;
+      box-sizing: border-box;
+    }
+    .settings-modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 12px;
+    }
+    .settings-modal-title {
+      font-size: 15px;
+      font-weight: 600;
+    }
+    .preset-row {
+      display: flex;
+      gap: 8px;
+    }
+    .preset-row .preset-btn {
+      flex: 1;
+      margin-bottom: 0;
     }
     #modal {
       width: 360px;
@@ -216,7 +268,7 @@
     #modal-tag {
       margin-top: 2px;
     }
-    #modal-close {
+    #modal-close, .modal-close-btn {
       width: auto;
       margin: 0;
       padding: 2px 8px;
@@ -225,7 +277,7 @@
       font-size: 16px;
       opacity: 0.6;
     }
-    #modal-close:hover {
+    #modal-close:hover, .modal-close-btn:hover {
       opacity: 1;
       background: transparent;
     }
@@ -287,22 +339,25 @@
 <body>
   <div id="layout">
     <div id="main">
-      <h1>Known players</h1>
-      <input id="search" type="text" placeholder="Search by name or battle tag...">
+      <div id="main-header">
+        <h1>Known players</h1>
+        <button id="settings-gear-btn" class="icon-btn" title="Settings" aria-label="Settings">&#9881;</button>
+      </div>
+      <input id="search" type="text" placeholder="Search name or battle tag">
       <div id="table-wrap">
         <table>
           <thead>
             <tr>
               <th data-key="display_name">Name</th>
               <th data-key="battlenet_tag">Battle Tag</th>
-              <th data-key="encounter_count">Together</th>
+              <th data-key="encounter_count" title="Matches played with or against them">DejaVu</th>
               <th data-key="as_teammate_count">Teammate</th>
               <th data-key="as_enemy_count">Enemy</th>
-              <th>W/L</th>
-              <th>W/L (teammate)</th>
-              <th>W/L (enemy)</th>
-              <th data-key="kills_on_them">Kills</th>
-              <th data-key="deaths_to_them">Deaths</th>
+              <th title="Wins and losses across every match together">W/L total</th>
+              <th title="Wins and losses with them on your team">W/L with</th>
+              <th title="Wins and losses with them on the enemy team">W/L against</th>
+              <th data-key="kills_on_them" title="Times you killed them">Kills</th>
+              <th data-key="deaths_to_them" title="Times they killed you">Deaths</th>
               <th data-key="first_seen">First Seen</th>
               <th data-key="last_seen">Last Seen</th>
             </tr>
@@ -330,24 +385,15 @@
         <ul class="leaderboard-list" id="lb-deaths"></ul>
       </div>
       <div class="settings-group">
-        <h2>Detail level</h2>
-        <div class="tier-row"><label><input type="radio" name="tier" value="basic"> Basic</label></div>
-        <div class="tier-row"><label><input type="radio" name="tier" value="standard"> Standard</label></div>
-        <div class="tier-row"><label><input type="radio" name="tier" value="full"> Full</label></div>
-        <div class="hint" id="tier-hint"></div>
-      </div>
-      <div class="settings-group">
         <h2>Data</h2>
         <button id="export-btn">Export as JSON</button>
         <div id="export-status"></div>
+        <button id="import-btn">Import from JSON</button>
+        <input type="file" id="import-file" accept="application/json,.json" style="display:none">
+        <div id="import-status"></div>
         <button id="clear-btn" class="danger">Clear all history</button>
         <div id="clear-status"></div>
       </div>
-      <div class="settings-group">
-        <h2>Dev</h2>
-        <button id="seed-btn">Seed 20 random players</button>
-        <div id="seed-status"></div>
-        <div class="hint">Fake data for testing the table — remove this before a real release.</div>
       </div>
     </div>
   </div>
@@ -361,7 +407,7 @@
         <button id="modal-close">&times;</button>
       </div>
       <div class="modal-section">
-        <h3>Record together</h3>
+        <h3>Your history together</h3>
         <div id="modal-record"></div>
       </div>
       <div class="modal-section">
@@ -370,16 +416,65 @@
       </div>
       <div class="modal-section">
         <h3>Tags</h3>
-        <input id="modal-tags" type="text" placeholder="Comma-separated, e.g. Friend, Good healer">
+        <input id="modal-tags" type="text" placeholder="Friend, Good healer">
       </div>
       <div class="modal-section">
-        <h3>Name history</h3>
+        <h3>Other names</h3>
         <div id="modal-names"></div>
       </div>
       <div class="modal-section">
-        <button id="modal-save">Save notes &amp; tags</button>
+        <button id="modal-save">Save</button>
         <button id="modal-delete" class="danger">Delete this player</button>
         <div id="modal-status"></div>
+      </div>
+    </div>
+  </div>
+  <div id="settings-backdrop" class="hidden">
+    <div id="settings-modal">
+      <div class="settings-modal-header">
+        <div class="settings-modal-title">Settings</div>
+        <button id="settings-close" class="modal-close-btn">&times;</button>
+      </div>
+
+      <div class="modal-section">
+        <h3>Quick presets</h3>
+        <div class="preset-row">
+          <button class="preset-btn" data-preset="basic">Simple</button>
+          <button class="preset-btn" data-preset="standard">Standard</button>
+          <button class="preset-btn" data-preset="full">Full</button>
+        </div>
+        <div class="hint">Sets what is saved and what the overlay shows in one click. You can still change anything below afterwards.</div>
+      </div>
+
+      <div class="modal-section">
+        <h3>What's saved</h3>
+        <div class="tier-row"><label><input type="radio" name="tier" value="basic"> Basic: who you played with or against, and when</label></div>
+        <div class="tier-row"><label><input type="radio" name="tier" value="standard"> Standard: also match results and who was in each match</label></div>
+        <div class="tier-row"><label><input type="radio" name="tier" value="full"> Full: also your kills and deaths against each player</label></div>
+        <div class="hint" id="tier-hint"></div>
+      </div>
+
+      <div class="modal-section">
+        <h3>What the overlay shows</h3>
+        <div class="hint" style="margin-top: 0; margin-bottom: 6px;">Greyed out options need a higher setting above. Your choice is remembered either way.</div>
+        <div class="tier-row" data-toggle-row="showRecency">
+          <label><input type="checkbox" data-toggle="showRecency"> When you last played together</label>
+        </div>
+        <div class="tier-row" data-toggle-row="showRecord" data-requires="standard">
+          <label><input type="checkbox" data-toggle="showRecord"> Win/loss record, as teammates and as opponents</label>
+        </div>
+        <div class="tier-row" data-toggle-row="showLastHero" data-requires="standard">
+          <label><input type="checkbox" data-toggle="showLastHero"> Hero they played last time</label>
+        </div>
+        <div class="tier-row" data-toggle-row="showMostPlayedHero" data-requires="standard">
+          <label><input type="checkbox" data-toggle="showMostPlayedHero"> Hero they play most often</label>
+        </div>
+        <div class="tier-row" data-toggle-row="showLifetimeKD" data-requires="full">
+          <label><input type="checkbox" data-toggle="showLifetimeKD"> Kills and deaths against them, all time</label>
+        </div>
+        <div class="tier-row" data-toggle-row="showMatchKD" data-requires="full">
+          <label><input type="checkbox" data-toggle="showMatchKD"> Kills and deaths against them, this match</label>
+        </div>
       </div>
     </div>
   </div>
