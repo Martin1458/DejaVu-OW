@@ -1,0 +1,31 @@
+# Local tooling config, not part of the app
+.claude/
+.vscode/
+.idea/
+
+# Overwolf packaging output
+*.opk
+
+# Throwaway render harnesses (see DEJAVU_OW_PLAN.md §12) — these are generated
+# next to the real .html so relative asset paths resolve, then deleted. Ignored
+# so a crashed run can never leave one committed.
+_preview*.html
+_pv_*.html
+
+# One-off asset-fetching leftovers
+wget.exe
+.wget-hsts
+
+# The app writes its logs and exports to Documents\DejaVu-OW, not here, but
+# ignore them in-tree too in case that ever changes.
+logs/
+exports/
+
+# OS / editor junk
+Thumbs.db
+desktop.ini
+.DS_Store
+*.swp
+*~
+
+node_modules/

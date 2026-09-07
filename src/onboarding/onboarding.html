@@ -1,0 +1,74 @@
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>DejaVu - OW (welcome)</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #1b1826;
+      color: #f4f4f6;
+      font-family: "Segoe UI", Arial, sans-serif;
+      overflow: hidden;
+    }
+    #panel {
+      box-sizing: border-box;
+      width: 100%;
+      height: 100%;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+    }
+    h1 {
+      font-size: 15px;
+      margin: 0 0 10px 0;
+    }
+    p {
+      font-size: 12px;
+      line-height: 1.5;
+      color: rgba(244, 244, 246, 0.85);
+      margin: 0 0 10px 0;
+    }
+    #spacer {
+      flex: 1;
+    }
+    button {
+      display: block;
+      width: 100%;
+      box-sizing: border-box;
+      padding: 8px 10px;
+      margin-bottom: 8px;
+      background: #2a2540;
+      border: 1px solid #3b3454;
+      border-radius: 4px;
+      color: #eee;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #352e50;
+    }
+    button.primary {
+      background: #35406b;
+      border-color: #4a5a94;
+    }
+    button.primary:hover {
+      background: #3f4c80;
+    }
+  </style>
+</head>
+<body>
+  <div id="panel">
+    <h1>Welcome to DejaVu</h1>
+    <p>DejaVu remembers people you have played with before and shows their history in an overlay during your match.</p>
+    <p>Right now it only saves who you played with and when. Open Settings to also save match results and kill stats, or to pick what the overlay shows. You can change this any time with Alt+H.</p>
+    <div id="spacer"></div>
+    <button id="open-settings-btn" class="primary">Open Settings</button>
+    <button id="keep-defaults-btn">Not now</button>
+  </div>
+  <script src="../background/file-logger.js"></script>
+  <script src="../background/settings.js"></script>
+  <script src="../background/window-utils.js"></script>
+  <script src="onboarding.js"></script>
+</body>
+</html>
