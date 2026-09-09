@@ -6,8 +6,9 @@
     "version": "0.1.0",
     "minimum-overwolf-version": "0.245.0",
     "author": "Martin Trasak",
-    "icon": "icons/icon.png",
-    "icon_gray": "icons/icon_gray.png",
+    "icon": "icons/IconMouseOver.png",
+    "icon_gray": "icons/IconMouseNormal.png",
+    "launcher_icon": "icons/launcher_icon.ico",
     "description": "Player history & encounter memory for Overwatch"
   },
   "permissions": ["FileSystem", "Hotkeys"],

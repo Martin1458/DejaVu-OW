@@ -62,8 +62,50 @@ function requireFile(label, relPath) {
   return p;
 }
 
-requireFile('meta.icon', manifest.meta.icon);
-requireFile('meta.icon_gray', manifest.meta.icon_gray);
+// Overwolf's store submission rules for these three, checked here so a
+// rejection shows up at build time instead of after a QA round-trip. Note the
+// naming is the opposite way round to what it reads like: `icon` is the
+// COLOURED hover-state dock icon and `icon_gray` is the greyscale default.
+// Both must be 256x256 PNG and at most 30KB. launcher_icon is the .ico used
+// for the desktop shortcut.
+function checkIconPng(field, relPath) {
+  const p = requireFile(field, relPath);
+  const full = path.join(ROOT, p);
+  if (!fs.existsSync(full)) return;
+  const buf = fs.readFileSync(full);
+  if (buf.slice(0, 8).toString('hex') !== '89504e470d0a1a0a') {
+    problems.push(field + ' (' + p + ') is not a PNG');
+    return;
+  }
+  const w = buf.readUInt32BE(16), h = buf.readUInt32BE(20);
+  if (w !== 256 || h !== 256) problems.push(field + ' (' + p + ') is ' + w + 'x' + h + ', Overwolf requires 256x256');
+  if (buf.length > 30 * 1024) problems.push(field + ' (' + p + ') is ' + Math.round(buf.length / 1024) + 'KB, Overwolf allows max 30KB');
+}
+
+checkIconPng('meta.icon', manifest.meta.icon);
+checkIconPng('meta.icon_gray', manifest.meta.icon_gray);
+
+if (manifest.meta.launcher_icon) {
+  const p = requireFile('meta.launcher_icon', manifest.meta.launcher_icon);
+  const full = path.join(ROOT, p);
+  if (fs.existsSync(full)) {
+    const buf = fs.readFileSync(full);
+    // ICO header: reserved=0, type=1
+    if (buf.length < 6 || buf.readUInt16LE(0) !== 0 || buf.readUInt16LE(2) !== 1) {
+      problems.push('meta.launcher_icon (' + p + ') is not a valid .ico file');
+    }
+  }
+} else {
+  problems.push('meta.launcher_icon is not set — required for store submission');
+}
+
+// Files sitting in icons/ that the manifest no longer points at would still be
+// packed, so say so rather than shipping dead weight.
+for (const f of [...included].filter((f) => f.startsWith('icons/'))) {
+  const referenced = [manifest.meta.icon, manifest.meta.icon_gray, manifest.meta.launcher_icon]
+    .filter(Boolean).map(norm);
+  if (!referenced.includes(f)) console.warn('  note: ' + f + ' is in icons/ but not referenced by the manifest');
+}
 
 for (const [name, win] of Object.entries(manifest.data.windows)) {
   const winFile = requireFile('window "' + name + '"', win.file);

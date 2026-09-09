@@ -45,47 +45,99 @@ var DejaVuWindows = (function () {
   // none of them ever reached the actual window. changeSize is the only thing
   // that moves it.
   //
-  // Sizes here are logical/DIP pixels, the same units the manifest uses and
-  // the same ones the page sees as CSS pixels (confirmed against a real
-  // dpiScale of 1.5: manifest 300x460 -> logicalBounds 300x460 -> physical
-  // 450x690), which is why auto_dpi_resize is left on.
+  // The units changeSize expects are NOT logical pixels, whatever
+  // auto_dpi_resize is documented to do. Measured 2026-09-09 on a dpiScale 1.5
+  // display: asking for 800x950 with auto_dpi_resize:true produced a window of
+  // logical 533x633 — exactly 800/1.5 and 950/1.5 — so the values are treated
+  // as physical and divided by the DPI scale on the way in. It reported
+  // {"success":true} while doing it, so nothing about the response says the
+  // size is wrong.
+  //
+  // Rather than hard-code the inverse (which would then break on a 1.0-scale
+  // display, or if Overwolf changes the convention), this measures what
+  // actually happened and corrects: if the resulting logical size is off by
+  // some factor, re-request scaled by that factor. One correction converges for
+  // any linear convention, and getting it wrong just costs another attempt.
   //
   // Idempotent: no-ops when the window is already the right size, so it's safe
-  // to call on every show. Re-reads the window afterwards and logs what it
-  // actually became rather than what was asked for, because a changeSize that
-  // silently does nothing is exactly the failure this is here to fix.
+  // to call on every show.
+  var MAX_SIZE_ATTEMPTS = 6;
+
+  // logicalBounds is absent until the window has actually been created, so fall
+  // back to deriving it from the physical size and the DPI scale.
+  function logicalSizeOf(win) {
+    if (!win) return { width: 0, height: 0 };
+    if (win.logicalBounds && win.logicalBounds.width) {
+      return { width: win.logicalBounds.width, height: win.logicalBounds.height };
+    }
+    var scale = win.dpiScale || 1;
+    if (win.width) return { width: Math.round(win.width / scale), height: Math.round(win.height / scale) };
+    return { width: 0, height: 0 };
+  }
+
+  function noteSize(line) {
+    logDiag(line);
+    if (window.DejaVuFileLog) DejaVuFileLog.logImportant('[windows] ' + line);
+  }
+
   function ensureSize(name, width, height, cb) {
+    applySize(name, width, height, width, height, 1, cb);
+  }
+
+  // wantW/wantH: the logical size we are aiming for.
+  // reqW/reqH: what we actually hand changeSize on this attempt.
+  function applySize(name, wantW, wantH, reqW, reqH, attempt, cb) {
     overwolf.windows.obtainDeclaredWindow(name, function (result) {
       if (!result.success || !result.window) {
-        logDiag('ensureSize(' + name + '): could not obtain window -> ' + JSON.stringify(result));
+        noteSize('ensureSize(' + name + '): could not obtain window -> ' + JSON.stringify(result));
         if (cb) cb(false);
         return;
       }
 
-      var bounds = result.window.logicalBounds || {};
-      if (bounds.width === width && bounds.height === height) {
+      var current = logicalSizeOf(result.window);
+      if (current.width === wantW && current.height === wantH) {
         if (cb) cb(true);
         return;
       }
 
-      var line = 'ensureSize(' + name + '): logical ' + bounds.width + 'x' + bounds.height +
-        ' -> ' + width + 'x' + height + ' (dpiScale=' + result.window.dpiScale + ')';
-      logDiag(line);
-      if (window.DejaVuFileLog) DejaVuFileLog.logImportant('[windows] ' + line);
+      noteSize('ensureSize(' + name + '): logical ' + current.width + 'x' + current.height +
+        ' -> want ' + wantW + 'x' + wantH + ', requesting ' + reqW + 'x' + reqH +
+        ' (attempt ' + attempt + '/' + MAX_SIZE_ATTEMPTS + ', dpiScale=' + result.window.dpiScale + ')');
 
       overwolf.windows.changeSize({
         window_id: result.window.id,
-        width: width,
-        height: height,
+        width: reqW,
+        height: reqH,
         auto_dpi_resize: true
       }, function (res) {
         overwolf.windows.obtainDeclaredWindow(name, function (after) {
-          var got = (after.success && after.window && after.window.logicalBounds) || {};
-          var done = 'ensureSize(' + name + ') result: ' + JSON.stringify(res) +
-            ' — window is now logical ' + got.width + 'x' + got.height;
-          logDiag(done);
-          if (window.DejaVuFileLog) DejaVuFileLog.logImportant('[windows] ' + done);
-          if (cb) cb(got.width === width && got.height === height);
+          var got = logicalSizeOf(after && after.window);
+
+          if (got.width === wantW && got.height === wantH) {
+            noteSize('ensureSize(' + name + '): now logical ' + got.width + 'x' + got.height + ' — correct');
+            if (cb) cb(true);
+            return;
+          }
+
+          if (attempt >= MAX_SIZE_ATTEMPTS || !got.width || !got.height) {
+            noteSize('ensureSize(' + name + '): gave up after ' + attempt + ' attempt(s) — window is logical ' +
+              got.width + 'x' + got.height + ', wanted ' + wantW + 'x' + wantH +
+              ', last response ' + JSON.stringify(res));
+            if (cb) cb(false);
+            return;
+          }
+
+          // Correct by the observed ratio: if asking for reqW produced got.width
+          // logical pixels, then wantW logical pixels needs reqW * wantW/got.width.
+          var nextW = Math.round(reqW * wantW / got.width);
+          var nextH = Math.round(reqH * wantH / got.height);
+          if (nextW === reqW && nextH === reqH) {
+            noteSize('ensureSize(' + name + '): stuck at logical ' + got.width + 'x' + got.height +
+              ' — changeSize is not moving this window');
+            if (cb) cb(false);
+            return;
+          }
+          applySize(name, wantW, wantH, nextW, nextH, attempt + 1, cb);
         });
       });
     });

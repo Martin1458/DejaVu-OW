@@ -118,8 +118,16 @@ var DejaVuGep = (function () {
         armEventWatchdog();
       } else {
         logDiag('giving up on GEP feed recovery after ' + MAX_WATCHDOG_ATTEMPTS +
-          ' attempts — feed may need an actual Overwatch restart to recover');
-        reportFeedState(true);
+          ' attempts — no events yet, which is normal outside a match');
+        // Deliberately does NOT report a failed feed. Measured 2026-09-09
+        // across every healthy session on record: GEP sends nothing at all
+        // until a match actually starts, and the gap between registering and
+        // the first event was 13, 19, 34 and 40 minutes. This watchdog gives up
+        // after ~21 seconds, so "gave up" was true in 4 of 5 sessions that then
+        // went on to deliver 2,000+ payloads each. Wiring a user-facing warning
+        // to it made the app cry wolf in most normal sessions. The recovery
+        // cycles themselves are cheap and invisible, so they stay; only the
+        // verdict is wrong, and it is withdrawn.
       }
     }, WATCHDOG_INTERVAL_MS);
   }
