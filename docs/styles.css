@@ -1,0 +1,345 @@
+/* Self-hosted, so the page makes no requests to Google. */
+@font-face {
+  font-family: "Bricolage Grotesque";
+  src: url("assets/fonts/bricolage.woff2") format("woff2");
+  font-weight: 400 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+/*
+  Charcoal theme. Every color on the page is derived from these six numbers.
+  --h / --s: background hue and saturation. --l-top / --l-bottom: lightness
+  of the first and last band, in %. --ah / --as: accent hue and saturation.
+*/
+:root {
+  --h: 30;
+  --s: 6;
+  --l-top: 17;
+  --l-bottom: 5;
+  --ah: 38;
+  --as: 85;
+
+  --bg: hsl(var(--h) calc(var(--s) * 1%) calc(var(--l-bottom) * 1%));
+  --card: rgba(255, 255, 255, 0.045);
+  --line: rgba(255, 255, 255, 0.08);
+  --text: #f4f4f6;
+  --text-dim: rgba(244, 244, 246, 0.72);
+  --text-faint: rgba(244, 244, 246, 0.5);
+  --accent: hsl(var(--ah) calc(var(--as) * 1%) 76%);
+  --accent-strong: hsl(var(--ah) calc(var(--as) * 1%) 64%);
+  --button: hsl(var(--ah) calc(var(--as) * 0.45%) 32%);
+  --button-hover: hsl(var(--ah) calc(var(--as) * 0.45%) 38%);
+  --button-border: hsl(var(--ah) calc(var(--as) * 0.5%) 48%);
+  --radius: 12px;
+  --max: 1120px;
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Bricolage Grotesque", "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+  font-size: 17px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+img { max-width: 100%; height: auto; display: block; }
+
+a { color: var(--accent); }
+
+.wrap {
+  max-width: var(--max);
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+/* ---------- header ---------- */
+header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  border-bottom: 1px solid var(--line);
+}
+.nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 64px;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  font-size: 18px;
+  color: var(--text);
+  text-decoration: none;
+}
+.brand img { width: 30px; height: 30px; }
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+}
+.nav-links a:not(.button) {
+  color: var(--text-dim);
+  text-decoration: none;
+  font-size: 15px;
+}
+.nav-links a:not(.button):hover { color: var(--text); }
+
+/* ---------- buttons ---------- */
+.button {
+  display: inline-block;
+  padding: 12px 22px;
+  background: var(--button);
+  border: 1px solid var(--button-border);
+  border-radius: 8px;
+  color: #fff;
+  font-weight: 600;
+  font-size: 16px;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+.button:hover { background: var(--button-hover); }
+.button.small { padding: 8px 16px; font-size: 14px; }
+/* Until the store link exists the button is a label, not a link. */
+.button.pending {
+  background: transparent;
+  /* border-style: dashed; */
+  color: var(--text-dim);
+  cursor: default;
+}
+
+/* ---------- hero ---------- */
+.hero {
+  position: relative;
+  overflow: hidden;
+  padding: 88px 0 96px;
+}
+.hero-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.15fr;
+  gap: 56px;
+  align-items: center;
+}
+.eyebrow {
+  display: inline-block;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 16px;
+}
+h1 {
+  font-size: clamp(38px, 5.2vw, 60px);
+  line-height: 1.08;
+  letter-spacing: -0.02em;
+  margin: 0 0 20px;
+}
+.lede {
+  font-size: 20px;
+  color: var(--text-dim);
+  margin: 0 0 32px;
+  max-width: 480px;
+}
+.hero-shot img {
+  border-radius: 10px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
+}
+
+/* ---------- sections ---------- */
+section { padding: 88px 0; }
+h2 {
+  font-size: clamp(28px, 3.4vw, 38px);
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  margin: 0 0 14px;
+}
+.section-intro {
+  color: var(--text-dim);
+  max-width: 620px;
+  margin: 0 0 48px;
+}
+
+/* how it works */
+.steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  counter-reset: step;
+}
+.step {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 28px;
+}
+.step::before {
+  counter-increment: step;
+  content: counter(step);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--button);
+  border: 1px solid var(--button-border);
+  font-weight: 700;
+  font-size: 15px;
+  margin-bottom: 16px;
+}
+.step h3 { margin: 0 0 6px; font-size: 19px; }
+.step p { margin: 0; color: var(--text-dim); font-size: 16px; }
+
+/* in-match list */
+.facts {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+}
+.fact {
+  border-top: 2px solid var(--accent-strong);
+  padding-top: 18px;
+}
+.fact h3 { margin: 0 0 6px; font-size: 18px; }
+.fact p { margin: 0; color: var(--text-dim); font-size: 16px; }
+
+/* features */
+.feature {
+  display: grid;
+  grid-template-columns: 1fr 1.25fr;
+  gap: 64px;
+  align-items: center;
+}
+.feature + .feature { margin-top: 110px; }
+.feature.flip .feature-text { order: 2; }
+.feature-text h2 { margin-bottom: 14px; }
+.feature-text p { color: var(--text-dim); margin: 0 0 14px; }
+.feature-shot img {
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px var(--line), 0 24px 60px rgba(0, 0, 0, 0.5);
+}
+.feature-shot.narrow img { max-width: min(440px, 100%); margin: 0 auto; }
+.tiers {
+  list-style: none;
+  padding: 0;
+  margin: 18px 0 0;
+}
+.tiers li {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 16px;
+}
+.tiers li span:last-child { color: var(--text-faint); white-space: nowrap; }
+
+/* privacy */
+.privacy {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+.privacy div {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 26px;
+}
+.privacy h3 { margin: 0 0 6px; font-size: 18px; }
+.privacy p { margin: 0; color: var(--text-dim); font-size: 16px; }
+
+/* hotkeys */
+kbd {
+  display: inline-block;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 1px 7px;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--text);
+}
+
+/* faq */
+.faq { max-width: 760px; }
+details {
+  border-bottom: 1px solid var(--line);
+  padding: 18px 0;
+}
+summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 18px;
+  list-style: none;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+summary::-webkit-details-marker { display: none; }
+summary::after {
+  content: "+";
+  color: var(--accent);
+  font-size: 22px;
+  line-height: 1;
+}
+details[open] summary::after { content: "\2212"; }
+details p { color: var(--text-dim); margin: 10px 0 0; }
+
+/* closing call to action */
+.closing { text-align: center; }
+.closing .section-intro { margin-left: auto; margin-right: auto; }
+
+/* ---------- footer ---------- */
+footer {
+  padding: 36px 0 48px;
+  color: var(--text-faint);
+  font-size: 14px;
+}
+.footer-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+footer p { margin: 0; }
+
+/* ---------- background bands ----------
+   Every block of the page is one solid color. Lightness steps down from
+   the top band (--i: 0) to the footer (--i: 7), all in the theme's hue. */
+.band {
+  background: hsl(var(--h) calc(var(--s) * 1%) calc((var(--l-top) - (var(--l-top) - var(--l-bottom)) * var(--i) / 7) * 1%));
+}
+
+/* ---------- small screens ---------- */
+@media (max-width: 900px) {
+  .hero { padding: 56px 0 64px; }
+  .hero-grid, .feature { grid-template-columns: 1fr; gap: 36px; }
+  .feature.flip .feature-text { order: 0; }
+  .feature + .feature { margin-top: 72px; }
+  .steps, .privacy { grid-template-columns: 1fr; }
+  .facts { grid-template-columns: repeat(2, 1fr); }
+  section { padding: 64px 0; }
+}
+/* Grid children default to min-width:auto, so one unbreakable line (the
+   storage sizes below) can widen the whole column past the screen. */
+.hero-grid > *, .feature > * { min-width: 0; }
+
+@media (max-width: 640px) {
+  body { font-size: 16px; }
+  .tiers li { flex-wrap: wrap; gap: 2px 16px; }
+  .nav-links a:not(.button) { display: none; }
+  .facts { grid-template-columns: 1fr; }
+  .lede { font-size: 18px; }
+}
