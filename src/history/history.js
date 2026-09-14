@@ -185,7 +185,7 @@
   }
 
   function load() {
-    statusEl.textContent = 'loading...';
+    statusEl.textContent = 'Loading...';
     logDiag('load: getAllPlayers + getAllRecords start');
     Promise.all([
       DejaVuStorage.getAllPlayers(),

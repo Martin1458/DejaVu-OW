@@ -192,7 +192,9 @@ function buildZip(entries) {
   for (const { name, data } of entries) {
     const nameBuf = Buffer.from(name, 'utf8');
     const crc = crc32(data);
-    const deflated = zlib.deflateRawSync(data, { level: 9 });
+    // Level 6, not 9: Overwolf's release checklist asks for a normal compression
+    // rate and explicitly not the highest one when building the .opk.
+    const deflated = zlib.deflateRawSync(data, { level: 6 });
     // Never let "compression" make a file bigger.
     const useDeflate = deflated.length < data.length;
     const body = useDeflate ? deflated : data;

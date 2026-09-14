@@ -80,8 +80,95 @@ var DejaVuWindows = (function () {
     if (window.DejaVuFileLog) DejaVuFileLog.logImportant('[windows] ' + line);
   }
 
+  // Leaves room for the window's own start_position offset (the overlay's is
+  // Top: 100) plus slack, so a clamped window lands fully on-screen without
+  // also having to be moved. MIN_SIZE stops a bogus monitor reading from
+  // collapsing a window to nothing.
+  var SCREEN_MARGIN = 120;
+  var MIN_SIZE = 320;
+
+  // Which monitor Overwatch is on, in the same scaled/logical pixels that
+  // logicalBounds (and therefore applySize) works in. The overlay is an
+  // in_game_only window sitting on top of the game, so the game's monitor is
+  // the one that has to fit it — not necessarily the primary one.
+  function monitorLogicalSize(cb) {
+    if (!window.overwolf || !overwolf.utils || !overwolf.utils.getMonitorsList ||
+        !overwolf.games || !overwolf.games.getRunningGameInfo) {
+      cb(null);
+      return;
+    }
+
+    overwolf.games.getRunningGameInfo(function (game) {
+      var handle = game && game.monitorHandle && game.monitorHandle.value;
+
+      overwolf.utils.getMonitorsList(function (res) {
+        var list = (res && (res.displays || res.monitors)) || [];
+        if (!list.length) {
+          logDiag('monitorLogicalSize: no monitors reported -> ' + JSON.stringify(res));
+          cb(null);
+          return;
+        }
+
+        var target = null;
+        var i;
+        for (i = 0; i < list.length; i++) {
+          if (handle != null && list[i].handle && list[i].handle.value === handle) {
+            target = list[i];
+            break;
+          }
+        }
+        // Falling back to primary (then to whatever is first) rather than
+        // giving up: a slightly wrong monitor still beats no clamp at all,
+        // since the failure mode without one is a window partly off-screen on
+        // a display the user cannot resize it back onto.
+        if (!target) {
+          for (i = 0; i < list.length; i++) {
+            if (list[i].is_primary) { target = list[i]; break; }
+          }
+        }
+        if (!target) target = list[0];
+
+        // dpiX/dpiY are DPI values where 96 == 100% scaling, and width/height
+        // are physical pixels; logicalBounds is in scaled pixels, so divide.
+        var scaleX = (target.dpiX || 96) / 96;
+        var scaleY = (target.dpiY || 96) / 96;
+        var size = {
+          width: Math.round((target.width || 0) / scaleX),
+          height: Math.round((target.height || 0) / scaleY)
+        };
+
+        if (!size.width || !size.height) {
+          logDiag('monitorLogicalSize: unusable monitor record -> ' + JSON.stringify(target));
+          cb(null);
+          return;
+        }
+        cb(size);
+      });
+    });
+  }
+
+  // A fixed 800x950 overlay fits a 1080p screen with room to spare, but runs
+  // off the bottom of a 1600x900 or 1366x768 laptop panel — where the window
+  // is `resizable: false`, so the player has no way to drag the lost part back
+  // into view. Clamping here rather than at each call site means every window
+  // that goes through ensureSize (overlay and onboarding both) gets it.
   function ensureSize(name, width, height, cb) {
-    applySize(name, width, height, width, height, 1, cb);
+    monitorLogicalSize(function (screen) {
+      var w = width, h = height;
+
+      if (screen) {
+        var maxW = Math.max(MIN_SIZE, screen.width - SCREEN_MARGIN);
+        var maxH = Math.max(MIN_SIZE, screen.height - SCREEN_MARGIN);
+        w = Math.min(width, maxW);
+        h = Math.min(height, maxH);
+        if (w !== width || h !== height) {
+          noteSize('ensureSize(' + name + '): clamped ' + width + 'x' + height + ' -> ' + w + 'x' + h +
+            ' to fit the game monitor (' + screen.width + 'x' + screen.height + ' logical)');
+        }
+      }
+
+      applySize(name, w, h, w, h, 1, cb);
+    });
   }
 
   // wantW/wantH: the logical size we are aiming for.

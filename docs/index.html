@@ -1,0 +1,571 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DejaVu: player history for Overwatch</title>
+  <meta name="description" content="DejaVu remembers every player you meet in Overwatch and shows your history with them when a match starts.">
+  <meta property="og:title" content="DejaVu: player history for Overwatch">
+  <meta property="og:description" content="Remember every player you meet. See who you've played with or against before, right when your match starts.">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="https://martin1458.github.io/DejaVu-OW/assets/overlay.png">
+  <link rel="icon" type="image/png" href="assets/icon.png">
+
+  <style>
+    :root {
+      --bg: #14121d;
+      --bg-raised: #1b1826;
+      --bg-card: #211d31;
+      --line: rgba(255, 255, 255, 0.08);
+      --text: #f4f4f6;
+      --text-dim: rgba(244, 244, 246, 0.72);
+      --text-faint: rgba(244, 244, 246, 0.5);
+      --accent: #9aa8f0;
+      --accent-strong: #6f7fd0;
+      --button: #35406b;
+      --button-hover: #3f4c80;
+      --button-border: #4a5a94;
+      --radius: 12px;
+      --max: 1120px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+      font-size: 17px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    img { max-width: 100%; height: auto; display: block; }
+
+    a { color: var(--accent); }
+
+    .wrap {
+      max-width: var(--max);
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* ---------- header ---------- */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: rgba(20, 18, 29, 0.85);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--line);
+    }
+    .nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 64px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 18px;
+      color: var(--text);
+      text-decoration: none;
+    }
+    .brand img { width: 30px; height: 30px; }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 28px;
+    }
+    .nav-links a:not(.button) {
+      color: var(--text-dim);
+      text-decoration: none;
+      font-size: 15px;
+    }
+    .nav-links a:not(.button):hover { color: var(--text); }
+
+    /* ---------- buttons ---------- */
+    .button {
+      display: inline-block;
+      padding: 12px 22px;
+      background: var(--button);
+      border: 1px solid var(--button-border);
+      border-radius: 8px;
+      color: #fff;
+      font-weight: 600;
+      font-size: 16px;
+      text-decoration: none;
+      transition: background 0.15s;
+    }
+    .button:hover { background: var(--button-hover); }
+    .button.small { padding: 8px 16px; font-size: 14px; }
+    /* Until the store link exists the button is a label, not a link. */
+    .button.pending {
+      background: transparent;
+      border-style: dashed;
+      color: var(--text-dim);
+      cursor: default;
+    }
+
+    /* ---------- hero ---------- */
+    .hero {
+      position: relative;
+      overflow: hidden;
+      padding: 88px 0 96px;
+      background:
+        radial-gradient(ellipse 55% 70% at 80% 35%, rgba(74, 90, 148, 0.4), transparent 70%),
+        radial-gradient(ellipse 45% 60% at 5% 100%, rgba(111, 127, 208, 0.14), transparent 70%);
+    }
+    .hero-grid {
+      display: grid;
+      grid-template-columns: 1fr 1.15fr;
+      gap: 56px;
+      align-items: center;
+    }
+    .eyebrow {
+      display: inline-block;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 16px;
+    }
+    h1 {
+      font-size: clamp(38px, 5.2vw, 60px);
+      line-height: 1.08;
+      letter-spacing: -0.02em;
+      margin: 0 0 20px;
+    }
+    h1 .accent { color: var(--accent); }
+    .lede {
+      font-size: 20px;
+      color: var(--text-dim);
+      margin: 0 0 32px;
+      max-width: 480px;
+    }
+    .hero-shot img {
+      border-radius: 10px;
+      box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
+    }
+
+    /* ---------- sections ---------- */
+    section { padding: 88px 0; }
+    section.alt { background: var(--bg-raised); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+    h2 {
+      font-size: clamp(28px, 3.4vw, 38px);
+      line-height: 1.2;
+      letter-spacing: -0.01em;
+      margin: 0 0 14px;
+    }
+    .section-intro {
+      color: var(--text-dim);
+      max-width: 620px;
+      margin: 0 0 48px;
+    }
+
+    /* how it works */
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+      counter-reset: step;
+    }
+    .step {
+      background: var(--bg-card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 28px;
+    }
+    .step::before {
+      counter-increment: step;
+      content: counter(step);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      background: var(--button);
+      border: 1px solid var(--button-border);
+      font-weight: 700;
+      font-size: 15px;
+      margin-bottom: 16px;
+    }
+    .step h3 { margin: 0 0 6px; font-size: 19px; }
+    .step p { margin: 0; color: var(--text-dim); font-size: 16px; }
+
+    /* in-match list */
+    .facts {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 20px;
+    }
+    .fact {
+      border-top: 2px solid var(--accent-strong);
+      padding-top: 18px;
+    }
+    .fact h3 { margin: 0 0 6px; font-size: 18px; }
+    .fact p { margin: 0; color: var(--text-dim); font-size: 16px; }
+
+    /* features */
+    .feature {
+      display: grid;
+      grid-template-columns: 1fr 1.25fr;
+      gap: 64px;
+      align-items: center;
+    }
+    .feature + .feature { margin-top: 110px; }
+    .feature.flip .feature-text { order: 2; }
+    .feature-text h2 { margin-bottom: 14px; }
+    .feature-text p { color: var(--text-dim); margin: 0 0 14px; }
+    .feature-shot img {
+      border-radius: 10px;
+      box-shadow: 0 0 0 1px var(--line), 0 24px 60px rgba(0, 0, 0, 0.5);
+    }
+    .feature-shot.narrow img { max-width: min(440px, 100%); margin: 0 auto; }
+    .tiers {
+      list-style: none;
+      padding: 0;
+      margin: 18px 0 0;
+    }
+    .tiers li {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--line);
+      font-size: 16px;
+    }
+    .tiers li span:last-child { color: var(--text-faint); white-space: nowrap; }
+
+    /* privacy */
+    .privacy {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+    .privacy div {
+      background: var(--bg-card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 26px;
+    }
+    .privacy h3 { margin: 0 0 6px; font-size: 18px; }
+    .privacy p { margin: 0; color: var(--text-dim); font-size: 16px; }
+
+    /* hotkeys */
+    kbd {
+      display: inline-block;
+      background: #322b49;
+      border: 1px solid #453c63;
+      border-bottom-width: 2px;
+      border-radius: 4px;
+      padding: 1px 7px;
+      font-family: inherit;
+      font-size: 14px;
+      color: var(--text);
+    }
+
+    /* faq */
+    .faq { max-width: 760px; }
+    details {
+      border-bottom: 1px solid var(--line);
+      padding: 18px 0;
+    }
+    summary {
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 18px;
+      list-style: none;
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    summary::-webkit-details-marker { display: none; }
+    summary::after {
+      content: "+";
+      color: var(--accent);
+      font-size: 22px;
+      line-height: 1;
+    }
+    details[open] summary::after { content: "\2212"; }
+    details p { color: var(--text-dim); margin: 10px 0 0; }
+
+    /* closing call to action */
+    .closing { text-align: center; }
+    .closing .section-intro { margin-left: auto; margin-right: auto; }
+
+    /* ---------- footer ---------- */
+    footer {
+      border-top: 1px solid var(--line);
+      padding: 36px 0 48px;
+      color: var(--text-faint);
+      font-size: 14px;
+    }
+    .footer-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 24px;
+      flex-wrap: wrap;
+    }
+    footer p { margin: 0; }
+
+    /* ---------- small screens ---------- */
+    @media (max-width: 900px) {
+      .hero { padding: 56px 0 64px; }
+      .hero-grid, .feature { grid-template-columns: 1fr; gap: 36px; }
+      .feature.flip .feature-text { order: 0; }
+      .feature + .feature { margin-top: 72px; }
+      .steps, .privacy { grid-template-columns: 1fr; }
+      .facts { grid-template-columns: repeat(2, 1fr); }
+      section { padding: 64px 0; }
+    }
+    /* Grid children default to min-width:auto, so one unbreakable line (the
+       storage sizes below) can widen the whole column past the screen. */
+    .hero-grid > *, .feature > * { min-width: 0; }
+
+    @media (max-width: 640px) {
+      body { font-size: 16px; }
+      .tiers li { flex-wrap: wrap; gap: 2px 16px; }
+      .nav-links a:not(.button) { display: none; }
+      .facts { grid-template-columns: 1fr; }
+      .lede { font-size: 18px; }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="wrap nav">
+      <a class="brand" href="#top">
+        <img src="assets/icon.png" alt="">
+        DejaVu
+      </a>
+      <nav class="nav-links">
+        <a href="#features">Features</a>
+        <a href="#privacy">Privacy</a>
+        <a href="#faq">FAQ</a>
+        <span class="button small pending" data-store-link>Coming soon</span>
+      </nav>
+    </div>
+  </header>
+
+  <main id="top">
+
+    <div class="hero">
+      <div class="wrap hero-grid">
+        <div>
+          <span class="eyebrow">For Overwatch, on Overwolf</span>
+          <h1>Remember every player <span class="accent">you meet</span></h1>
+          <p class="lede">DejaVu shows who you've played with or against before, right when your match starts.</p>
+          <span class="button pending" data-store-link>Coming soon to Overwolf</span>
+        </div>
+        <div class="hero-shot">
+          <img src="assets/overlay.png" width="800" height="586"
+               alt="In-match overlay showing past encounters, records, and heroes for each player">
+        </div>
+      </div>
+    </div>
+
+    <section class="alt">
+      <div class="wrap">
+        <h2>What you see in every match</h2>
+        <p class="section-intro">When a match starts, the overlay lists everyone in your lobby and what you know about them.</p>
+        <div class="facts">
+          <div class="fact">
+            <h3>How often</h3>
+            <p>How many times you've played together, and how long ago it was.</p>
+          </div>
+          <div class="fact">
+            <h3>Your record</h3>
+            <p>Wins and losses with them as teammates, and against them as opponents.</p>
+          </div>
+          <div class="fact">
+            <h3>Their heroes</h3>
+            <p>The hero they played last time, and the hero they play most.</p>
+          </div>
+          <div class="fact">
+            <h3>Kills and deaths</h3>
+            <p>Between you and them, in this match and across every match.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <h2>How it works</h2>
+        <p class="section-intro">Set up once, then it runs on its own every time you play.</p>
+        <div class="steps">
+          <div class="step">
+            <h3>Install DejaVu</h3>
+            <p>Get it from the Overwolf app store.</p>
+          </div>
+          <div class="step">
+            <h3>Pick what to save</h3>
+            <p>Choose a detail level the first time you launch Overwatch. It takes a few seconds.</p>
+          </div>
+          <div class="step">
+            <h3>Play</h3>
+            <p>When a match starts, DejaVu shows who you've met before.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="alt" id="features">
+      <div class="wrap">
+
+        <div class="feature">
+          <div class="feature-text">
+            <h2>Your whole player history</h2>
+            <p>Press <kbd>Alt+H</kbd> to see everyone you've ever met. Search by name or battle tag.</p>
+            <p>Check who you team up with most, who you face most, who you've killed most, and who has killed you most.</p>
+          </div>
+          <div class="feature-shot">
+            <img src="assets/history.png" width="958" height="680" loading="lazy"
+                 alt="Player history window with a searchable list and leaderboards">
+          </div>
+        </div>
+
+        <div class="feature flip">
+          <div class="feature-text">
+            <h2>Notes on players worth remembering</h2>
+            <p>Open any player to add notes and tags.</p>
+            <p>See your record together, your current streak, and every name they've used.</p>
+          </div>
+          <div class="feature-shot">
+            <img src="assets/player-notes.png" width="958" height="680" loading="lazy"
+                 alt="Player details with notes, tags, record together, and past names">
+          </div>
+        </div>
+
+        <div class="feature">
+          <div class="feature-text">
+            <h2>You choose what's saved</h2>
+            <p>Pick a detail level when you first start. You can change it at any time.</p>
+            <ul class="tiers">
+              <li><span><strong>Basic:</strong> who you met, and when</span><span>~0.6 MB / 100 matches</span></li>
+              <li><span><strong>Standard:</strong> also results and heroes</span><span>~0.9 MB / 100 matches</span></li>
+              <li><span><strong>Full:</strong> also kills and deaths</span><span>~0.9 MB / 100 matches</span></li>
+            </ul>
+          </div>
+          <div class="feature-shot narrow">
+            <img src="assets/onboarding.png" width="560" height="660" loading="lazy"
+                 alt="Welcome screen for choosing how much DejaVu saves">
+          </div>
+        </div>
+
+        <div class="feature flip">
+          <div class="feature-text">
+            <h2>Show only what you care about</h2>
+            <p>Turn any overlay column on or off at any time.</p>
+            <p>Press <kbd>Alt+H</kbd> and click the gear to open settings. Press <kbd>Alt+G</kbd> during a match to hide or show the overlay.</p>
+          </div>
+          <div class="feature-shot">
+            <img src="assets/settings.png" width="958" height="680" loading="lazy"
+                 alt="Settings for detail level and overlay columns">
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <section id="privacy">
+      <div class="wrap">
+        <h2>Private by design</h2>
+        <p class="section-intro">Your history is yours. DejaVu keeps it on your computer and nowhere else.</p>
+        <div class="privacy">
+          <div>
+            <h3>Stays on your PC</h3>
+            <p>Everything DejaVu saves is stored locally. Nothing is uploaded.</p>
+          </div>
+          <div>
+            <h3>No account</h3>
+            <p>There's nothing to sign up for and nothing to log in to.</p>
+          </div>
+          <div>
+            <h3>Yours to keep or erase</h3>
+            <p>Export your history to a file, import it again, or erase it whenever you want.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="alt" id="faq">
+      <div class="wrap faq">
+        <h2>FAQ</h2>
+
+        <details>
+          <summary>Does DejaVu upload my data?</summary>
+          <p>No. Everything stays on your PC.</p>
+        </details>
+
+        <details>
+          <summary>Can I see who's in my match before it starts?</summary>
+          <p>No. DejaVu only shows players once the match has started.</p>
+        </details>
+
+        <details>
+          <summary>How much space does it use?</summary>
+          <p>Less than 1 MB per 100 matches, even on the Full setting.</p>
+        </details>
+
+        <details>
+          <summary>Can I back up my history?</summary>
+          <p>Yes. Open your history with <kbd>Alt+H</kbd> and use Export as JSON. Import from JSON brings it back.</p>
+        </details>
+
+        <details>
+          <summary>Can I change the hotkeys?</summary>
+          <p>Yes. Open Overwolf's settings and go to Hotkeys.</p>
+        </details>
+
+        <details>
+          <summary>The overlay says "Not receiving match data". What do I do?</summary>
+          <p>Close Overwatch, leave Overwolf running, then launch Overwatch again. DejaVu picks up on its own once data arrives.</p>
+        </details>
+      </div>
+    </section>
+
+    <section class="closing">
+      <div class="wrap">
+        <h2>Never forget a player again</h2>
+        <p class="section-intro">DejaVu remembers every player you meet, so you don't have to.</p>
+        <span class="button pending" data-store-link>Coming soon to Overwolf</span>
+      </div>
+    </section>
+
+  </main>
+
+  <footer>
+    <div class="wrap footer-row">
+      <p>Made by Martin Trasak</p>
+      <p>DejaVu is not affiliated with or endorsed by Blizzard Entertainment. Overwatch is a trademark of Blizzard Entertainment, Inc.</p>
+    </div>
+  </footer>
+
+  <script>
+    // Paste the Overwolf store URL here once DejaVu is published. Every
+    // "Coming soon" button on the page turns into a real link to it.
+    var STORE_URL = '';
+
+    if (STORE_URL) {
+      document.querySelectorAll('[data-store-link]').forEach(function (el) {
+        var link = document.createElement('a');
+        link.href = STORE_URL;
+        link.className = el.className.replace('pending', '').trim();
+        link.textContent = el.classList.contains('small') ? 'Get DejaVu' : 'Get DejaVu on Overwolf';
+        el.replaceWith(link);
+      });
+    }
+  </script>
+</body>
+</html>

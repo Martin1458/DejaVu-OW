@@ -160,6 +160,41 @@
     players.forEach(function (player) {
       rowsEl.appendChild(buildRow(player));
     });
+    renderClippedNote();
+  }
+
+  // On a screen too short for the whole lobby the panel clips rows rather than
+  // running off the monitor (see #table-wrap in overlay.html). Clickthrough
+  // means the player cannot scroll to them, so silently dropping people would
+  // make the panel quietly lie about who is in the match — say so instead.
+  //
+  // Measured after layout rather than calculated from row heights, which vary
+  // with whether a row wrapped onto two lines.
+  function renderClippedNote() {
+    var note = document.getElementById('clipped-note');
+    var wrap = document.getElementById('table-wrap');
+    if (!note || !wrap) return;
+
+    var limit = wrap.clientHeight;
+    if (!limit) { note.style.display = 'none'; return; }
+
+    var hidden = 0;
+    var rows = rowsEl.children;
+    for (var i = 0; i < rows.length; i++) {
+      // offsetTop is relative to the nearest positioned ancestor; both the row
+      // and the wrapper share the panel's coordinate space here, so comparing
+      // the row's bottom against the wrapper's own top+height is what tells us
+      // whether it actually landed inside the visible area.
+      if (rows[i].offsetTop + rows[i].offsetHeight > wrap.offsetTop + limit) hidden++;
+    }
+
+    if (hidden > 0) {
+      note.textContent = '+' + hidden + ' more player' + (hidden === 1 ? '' : 's') +
+        ' did not fit. Turn off some columns in Settings.';
+      note.style.display = '';
+    } else {
+      note.style.display = 'none';
+    }
   }
 
   // The stats used to be labelled in place ("this match 2K 1D", "You 5 – Them

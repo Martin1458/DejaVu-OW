@@ -105,6 +105,12 @@ DejaVuGep.init({
   onGameDetected: function () {
     if (!DejaVuSettings.isSetupComplete()) {
       DejaVuFileLog.log('setup not complete — showing onboarding popup');
+      // Same reason showOverlay() does this (see window-utils.js): the
+      // manifest's `size` only ever seeds a brand-new window, so an install
+      // that already created the onboarding window at the old 380x320 would
+      // otherwise render the rebuilt screen into a box less than half its
+      // height. Idempotent, so it costs nothing when the size is already right.
+      DejaVuWindows.ensureSize('onboarding', 560, 660);
       DejaVuWindows.show('onboarding');
     }
   },

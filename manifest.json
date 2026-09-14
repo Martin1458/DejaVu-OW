@@ -1,9 +1,9 @@
 {
-  "manifest_version": "1",
+  "manifest_version": 1,
   "type": "WebApp",
   "meta": {
     "name": "DejaVu - OW",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "minimum-overwolf-version": "0.245.0",
     "author": "Martin Trasak",
     "icon": "icons/IconMouseOver.png",
@@ -54,8 +54,8 @@
         "resizable": false,
         "show_in_taskbar": false,
         "in_game_only": true,
-        "size": { "width": 380, "height": 320 },
-        "start_position": { "Top": 160, "Left": 760 }
+        "size": { "width": 560, "height": 660 },
+        "start_position": { "Top": 90, "Left": 680 }
       }
     },
     "game_targeting": {

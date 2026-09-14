@@ -6,13 +6,22 @@
     html, body {
       margin: 0;
       padding: 0;
+      height: 100%;
       background: transparent;
       overflow: hidden;
       font-family: "Segoe UI", Arial, sans-serif;
     }
+    /* max-height, deliberately not height: the panel still shrinks to its
+       content so a three-player lobby doesn't paint a 950px dark slab over the
+       game. The cap only bites when the roster is taller than the window —
+       which is what ensureSize's monitor clamp can now produce on a small
+       laptop panel. */
     #panel {
       box-sizing: border-box;
       width: 100%;
+      max-height: 100%;
+      display: flex;
+      flex-direction: column;
       padding: 14px;
       background: rgba(12, 13, 20, 0.92);
       border: 1px solid rgba(255, 255, 255, 0.12);
@@ -202,6 +211,21 @@
     .result-badge.victory { background: rgba(139, 242, 155, 0.22); color: #8bf29b; }
     .result-badge.defeat { background: rgba(255, 157, 157, 0.22); color: #ff9d9d; }
     .result-badge.draw { background: rgba(236, 217, 138, 0.22); color: #ecd98a; }
+    #table-wrap {
+      flex: 1 1 auto;
+      /* min-height:0 is what actually lets a flex child shrink below its
+         content size; without it the table keeps its full height and pushes
+         the footnote out of the window instead of being clipped itself. */
+      min-height: 0;
+      overflow: hidden;
+    }
+    #clipped-note {
+      flex: 0 0 auto;
+      display: none;
+      padding-top: 5px;
+      font-size: 11px;
+      color: rgba(255, 214, 153, 0.9);
+    }
     #footnote {
       margin-top: 8px;
       padding-top: 6px;
@@ -223,13 +247,26 @@
       <span>Overwolf's game data feed did not start this session. Restarting Overwatch alone usually will not fix it. Close Overwatch, leave Overwolf running, then launch Overwatch again. DejaVu picks up on its own once data arrives.</span>
     </div>
     <div id="empty">Waiting for players...</div>
-    <table id="table" style="display:none">
-      <thead id="head"></thead>
-      <tbody id="rows"></tbody>
-    </table>
+    <!-- The table is wrapped so it, and only it, absorbs the squeeze when the
+         panel hits its max-height: the title row, the clipped-rows note and
+         the footnote all stay visible, and rows are what get cut. This window
+         is clickthrough, so the overflow can never be scrolled — #clipped-note
+         below is the only way the player learns rows are missing. -->
+    <div id="table-wrap">
+      <table id="table" style="display:none">
+        <thead id="head"></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <div id="clipped-note"></div>
     <!-- Kept short on purpose: the column headers now carry the labelling this
-         used to do, and every header cell has a fuller tooltip. -->
-    <div id="footnote">DejaVu counts this match, so 1 means it is your first time together. K/D columns are <span class="kd-num kd-you">your kills</span>/<span class="kd-num kd-them">your deaths</span>. Hover a heading to see what it means. Choose what shows here in Settings (Alt+H).</div>
+         used to do. Note the `title` tooltips overlay.js sets on those headers
+         can never actually appear — this window is `clickthrough` in the
+         manifest, so it receives no mouse events at all and nothing here is
+         hoverable. They are left in place for the History window's benefit and
+         in case a peek mode ever makes this window interactive; this footnote
+         is the only column explanation the player can really get. -->
+    <div id="footnote">DejaVu counts this match, so 1 means your first time together. K/D columns are <span class="kd-num kd-you">your kills</span>/<span class="kd-num kd-them">your deaths</span>. Choose what shows here in Settings (Alt+H).</div>
   </div>
   <script src="hero-icons.js"></script>
   <script src="overlay.js"></script>
