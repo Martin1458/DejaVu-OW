@@ -111,6 +111,76 @@ var DejaVuSettings = (function () {
     return next;
   }
 
+  // Whether the overlay takes the mouse in game. Off by default: an
+  // interactive window swallows any click that lands on it, and the collapsed
+  // badge cannot shrink below Overwolf's 100px minimum window height, so a
+  // locked overlay is the safe resting state and dragging is something the user
+  // switches on when they want to move it.
+  var KEY_OVERLAY_MOVABLE = 'dejavu.overlayMovable';
+
+  function isOverlayMovable() {
+    try {
+      return localStorage.getItem(KEY_OVERLAY_MOVABLE) === 'true';
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function setOverlayMovable(movable) {
+    try {
+      localStorage.setItem(KEY_OVERLAY_MOVABLE, movable ? 'true' : 'false');
+    } catch (e) {
+      console.warn('[DejaVuSettings] localStorage write failed', e);
+    }
+  }
+
+  // Where the user has dragged the overlay, per mode — the table and the
+  // badge are different shapes in different places, so a position that suits
+  // one is wrong for the other. Absent until the window is actually dragged,
+  // which is what lets overlay-controller.js fall back to its defaults rather
+  // than having to seed a position up front.
+  var OVERLAY_POSITION_KEYS = {
+    expanded: 'dejavu.overlayPosition.expanded',
+    collapsed: 'dejavu.overlayPosition.collapsed'
+  };
+
+  // Returns { left, top } in logical pixels, or null when never dragged.
+  function getOverlayPosition(mode) {
+    var key = OVERLAY_POSITION_KEYS[mode];
+    if (!key) return null;
+    try {
+      var raw = localStorage.getItem(key);
+      if (!raw) return null;
+      var parsed = JSON.parse(raw);
+      // A stored value that isn't two finite numbers would place the window
+      // somewhere unrecoverable, so treat anything unexpected as unset.
+      if (!parsed || !isFinite(parsed.left) || !isFinite(parsed.top)) return null;
+      return { left: parsed.left, top: parsed.top };
+    } catch (e) {
+      console.warn('[DejaVuSettings] localStorage read failed', e);
+      return null;
+    }
+  }
+
+  function setOverlayPosition(mode, left, top) {
+    var key = OVERLAY_POSITION_KEYS[mode];
+    if (!key || !isFinite(left) || !isFinite(top)) return;
+    try {
+      localStorage.setItem(key, JSON.stringify({ left: Math.round(left), top: Math.round(top) }));
+    } catch (e) {
+      console.warn('[DejaVuSettings] localStorage write failed', e);
+    }
+  }
+
+  function clearOverlayPositions() {
+    try {
+      localStorage.removeItem(OVERLAY_POSITION_KEYS.expanded);
+      localStorage.removeItem(OVERLAY_POSITION_KEYS.collapsed);
+    } catch (e) {
+      console.warn('[DejaVuSettings] localStorage write failed', e);
+    }
+  }
+
   function isSetupComplete() {
     try {
       return localStorage.getItem(KEY_SETUP_COMPLETE) === 'true';
@@ -136,6 +206,11 @@ var DejaVuSettings = (function () {
     setOverlayToggle: setOverlayToggle,
     getTotalMatchesPlayed: getTotalMatchesPlayed,
     incrementTotalMatchesPlayed: incrementTotalMatchesPlayed,
+    isOverlayMovable: isOverlayMovable,
+    setOverlayMovable: setOverlayMovable,
+    getOverlayPosition: getOverlayPosition,
+    setOverlayPosition: setOverlayPosition,
+    clearOverlayPositions: clearOverlayPositions,
     isSetupComplete: isSetupComplete,
     markSetupComplete: markSetupComplete
   };

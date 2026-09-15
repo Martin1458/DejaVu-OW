@@ -7,11 +7,12 @@
 var DejaVuOverlayController = (function () {
   var OVERLAY_WINDOW = 'overlay';
 
-  // Whether the panel *should* be showing per the Alt+G toggle. Independent from
-  // match state: hiding it mid-match via the hotkey sticks until either you press
-  // it again or the next match starts (resetMatch always shows it back up, so a
-  // "hidden" preference doesn't carry silently into a match you'd want to see it).
-  var visible = true;
+  // The overlay window is up for the whole session now; what Alt+J changes is
+  // whether it draws the table or shrinks to a badge. Collapsing mid-match
+  // sticks until either you press it again or the next match starts
+  // (resetMatch always expands, so a collapsed panel doesn't carry silently
+  // into a match you'd want to see).
+  var collapsed = true;
 
   var rowsByTag = {};      // battlenet_tag -> row currently shown for this match
   var lastMatchResult = null; // this match's own outcome, once resolved (or null)
@@ -42,17 +43,80 @@ var DejaVuOverlayController = (function () {
   var OVERLAY_WIDTH = 800;
   var OVERLAY_HEIGHT = 950;
 
+  // The badge's own shape. The window itself has to shrink and move, not just
+  // its contents: an 800x950 window parked in the corner would put its
+  // transparent area over the corner and draw the badge somewhere in the middle
+  // of the screen.
+  // 100 tall because that is Overwolf’s minimum window height, not because the
+  // badge needs it — the badge is ~34 and sits pinned to the bottom-right
+  // corner of this window (see body.collapsed in overlay.html). Asking for less
+  // just makes ensureSize negotiate with a floor it cannot move.
+  var COLLAPSED_WIDTH = 150;
+  var COLLAPSED_HEIGHT = 100;
+
+  // Where the table sits when expanded. Matches the manifest's start_position,
+  // which only ever applies when the window is first created.
+  var EXPANDED_LEFT = 20;
+  var EXPANDED_TOP = 100;
+
   function showOverlay() {
-    // Enforced on every show rather than once at startup: it no-ops when the
-    // size is already right, and this way a window that Overwolf recreated at
-    // some stale size gets corrected the next time the panel appears instead
-    // of staying wrong for the rest of the session.
-    DejaVuWindows.ensureSize(OVERLAY_WINDOW, OVERLAY_WIDTH, OVERLAY_HEIGHT);
-    DejaVuWindows.show(OVERLAY_WINDOW);
+    applyShape();
+    DejaVuWindows.show(OVERLAY_WINDOW, function () {
+      applyInputMode();
+    });
   }
 
-  function hideOverlay() {
-    DejaVuWindows.hide(OVERLAY_WINDOW);
+  // Size then position, in that order: placeBottomRight measures the window to
+  // work out where its right edge should start, so it has to run after the
+  // resize has actually landed. Both are enforced on every show rather than
+  // once at startup — they no-op when nothing has changed, and a window
+  // Overwolf recreated at a stale size or position gets corrected next time the
+  // panel appears instead of staying wrong for the rest of the session.
+  function applyShape() {
+    var mode = collapsed ? 'collapsed' : 'expanded';
+    // Once the window has been dragged, that position wins over the default
+    // corner for good — otherwise the next toggle would snap it back and the
+    // drag would look like it did nothing.
+    var saved = DejaVuSettings.getOverlayPosition(mode);
+    var width = collapsed ? COLLAPSED_WIDTH : OVERLAY_WIDTH;
+    var height = collapsed ? COLLAPSED_HEIGHT : OVERLAY_HEIGHT;
+
+    DejaVuWindows.ensureSize(OVERLAY_WINDOW, width, height, function () {
+      if (saved) {
+        DejaVuWindows.placeAt(OVERLAY_WINDOW, saved.left, saved.top);
+      } else if (collapsed) {
+        DejaVuWindows.placeBottomRight(OVERLAY_WINDOW);
+      } else {
+        DejaVuWindows.placeAt(OVERLAY_WINDOW, EXPANDED_LEFT, EXPANDED_TOP);
+      }
+    });
+  }
+
+  // Tells the window which of its two faces to draw. Sent on every change and
+  // again on resync, so a window Overwolf recreated mid-session does not sit in
+  // whatever state it loaded with.
+  function sendDisplayMode() {
+    overwolf.windows.sendMessage(OVERLAY_WINDOW, 'display-mode', {
+      collapsed: collapsed,
+      movable: DejaVuSettings.isOverlayMovable()
+    }, function () {});
+  }
+
+  // Re-applied on every show rather than once: Overwolf can recreate the window
+  // mid-session, and a recreated one comes back with the manifest's declared
+  // clickthrough rather than whatever the user last chose.
+  function applyInputMode() {
+    var movable = DejaVuSettings.isOverlayMovable();
+    DejaVuWindows.setInputPassThrough(OVERLAY_WINDOW, !movable);
+  }
+
+  // Shown collapsed as soon as the app starts, rather than waiting for a match:
+  // this badge is what tells the player DejaVu is running and which key opens
+  // the table. The window is in_game_only, so nothing appears on the desktop.
+  function init() {
+    collapsed = true;
+    showOverlay();
+    sendDisplayMode();
   }
 
   // Confirmed in testing: toggling the overlay back on mid-match with just
@@ -63,17 +127,18 @@ var DejaVuOverlayController = (function () {
   // from messages it can't display. Resending the full current state on every
   // becomes-visible transition (not just at match start) fixes that instead of
   // relying on whatever the window happened to have queued.
-  function toggleVisibility() {
-    visible = !visible;
-    if (visible) {
-      showOverlay();
-      resync();
-    } else {
-      hideOverlay();
-    }
+  function toggleCollapsed() {
+    collapsed = !collapsed;
+    logDiag('Alt+J pressed: panel is now ' + (collapsed ? 'collapsed to the badge' : 'showing the table'));
+    // The window changes shape on the way, so this is showOverlay(), not just a
+    // message to the window.
+    showOverlay();
+    sendDisplayMode();
+    if (!collapsed) resync();
   }
 
   function resync() {
+    sendDisplayMode();
     sendPlayers();
     overwolf.windows.sendMessage(OVERLAY_WINDOW, 'match-result', { result: lastMatchResult }, function () {});
     sendFeedState();
@@ -95,7 +160,14 @@ var DejaVuOverlayController = (function () {
     if (window.DejaVuFileLog) {
       DejaVuFileLog.logImportant('[overlay] feed state changed: ' + (feedFailed ? 'FAILED' : 'recovered'));
     }
-    if (feedFailed && visible) showOverlay();
+    // Worth interrupting a collapsed panel for: this is the one state the
+    // user has to act on, and the badge has no room to say so.
+    if (feedFailed && collapsed) {
+      collapsed = false;
+      applyShape();
+      sendDisplayMode();
+    }
+    if (feedFailed) showOverlay();
     sendFeedState();
   }
 
@@ -116,7 +188,7 @@ var DejaVuOverlayController = (function () {
   function resetMatch() {
     rowsByTag = {};
     lastMatchResult = null;
-    visible = true;
+    collapsed = false;
     logToggleState();
     showOverlay();
     resync();
@@ -311,17 +383,22 @@ var DejaVuOverlayController = (function () {
     });
   }
 
+  // Back to the badge rather than gone: the window stays up between matches,
+  // shrinking into the corner instead of disappearing.
   function handleMatchEnd() {
-    hideOverlay();
+    collapsed = true;
+    applyShape();
+    sendDisplayMode();
   }
 
   return {
+    init: init,
     resetMatch: resetMatch,
     syncRoster: syncRoster,
     handleFeedStateChanged: handleFeedStateChanged,
     handlePlayerRecognized: handlePlayerRecognized,
     handleMatchResult: handleMatchResult,
     handleMatchEnd: handleMatchEnd,
-    toggleVisibility: toggleVisibility
+    toggleCollapsed: toggleCollapsed
   };
 })();

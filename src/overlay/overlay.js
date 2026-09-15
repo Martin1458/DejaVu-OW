@@ -16,6 +16,14 @@
   var ALL_COLUMNS = { lastHero: true, matchKD: true, lifetimeKD: true, record: true };
   var columns = ALL_COLUMNS;
   var feedFailed = false;
+  // Starts collapsed, and the background expands it at match_start. That way
+  // round the window can be shown before any state has been sent without
+  // flashing an empty "waiting for players" table over the game.
+  var collapsed = true;
+  // Mirrors the Settings toggle. The window is made clickthrough when this is
+  // off, so mouse events should not arrive at all — this is belt and braces,
+  // and it drives the move cursor.
+  var movable = false;
 
   function init() {
     tableEl = document.getElementById('table');
@@ -24,7 +32,35 @@
     emptyEl = document.getElementById('empty');
     matchResultEl = document.getElementById('match-result');
     feedWarningEl = document.getElementById('feed-warning');
+    document.body.classList.add('collapsed');
+    // Read once up front so the cursor is right before the first display-mode
+    // message arrives; settings.js shares localStorage across every window.
+    setMovable(DejaVuSettings.isOverlayMovable());
+    initDragging();
     overwolf.windows.onMessageReceived.addListener(handleMessage);
+    applyLiveHotkeys();
+  }
+
+  // The panel stays up for the whole match, so the hint has to name the key
+  // that actually hides it — read live via DejaVuHotkeys rather than trusting
+  // the manifest default, and re-read if the user rebinds it while the panel
+  // is on screen.
+  function applyLiveHotkeys() {
+    DejaVuHotkeys.watch(function (keys) {
+      var hintEl = document.getElementById('hide-hint');
+      var hide = DejaVuHotkeys.label(keys, 'toggle_overlay');
+      if (hide) {
+        hintEl.innerHTML = 'Press <kbd id="hide-key"></kbd> to hide';
+        document.getElementById('hide-key').textContent = hide;
+      } else {
+        // Deliberately unbound: there is no key to name, so say what to do.
+        hintEl.textContent = 'Set a hide hotkey in Overwolf settings';
+      }
+      // The same key, named on the badge the user sees while collapsed.
+      if (hide) document.getElementById('expand-key').textContent = hide;
+      var openHistory = DejaVuHotkeys.label(keys, 'open_history');
+      if (openHistory) document.getElementById('history-key').textContent = openHistory;
+    });
   }
 
   function handleMessage(message) {
@@ -39,9 +75,55 @@
     // simply stays hidden and the panel behaves exactly as it did before —
     // same degrade-quietly rule the `columns` payload follows, since either
     // window can be running its own build until Overwolf is restarted.
+    // Alt+J: the background flips this rather than hiding the window.
+    if (message.id === 'display-mode') {
+      setCollapsed(message.content && message.content.collapsed);
+      setMovable(message.content && message.content.movable);
+    }
+    // Sent by the History window the moment the toggle is flipped, so the
+    // cursor stops promising a drag that will not happen.
+    if (message.id === 'input-mode') {
+      setMovable(message.content && message.content.movable);
+    }
     if (message.id === 'feed-state') {
       renderFeedState(message.content && message.content.failed);
     }
+  }
+
+  // Drag-to-move. The window is declared clickthrough:false so it receives
+  // the mouse in game — though only where the game leaves a cursor to use
+  // (menus, lobby, the scoreboard). During live play Overwatch holds the mouse
+  // exclusively and nothing reaches this window, which is also what stops the
+  // panel from swallowing clicks in a fight.
+  //
+  // The new position is read back from the window rather than from dragMove's
+  // own result, whose shape differs between Overwolf versions, and is stored
+  // per mode: the badge and the table are different shapes in different
+  // corners, so one position cannot serve both.
+  function initDragging() {
+    document.getElementById('panel').addEventListener('mousedown', function (e) {
+      if (e.button !== 0 || !movable) return;
+      overwolf.windows.getCurrentWindow(function (result) {
+        if (!result || !result.success || !result.window) return;
+        overwolf.windows.dragMove(result.window.id, function () {
+          overwolf.windows.getCurrentWindow(function (after) {
+            var bounds = after && after.window && after.window.logicalBounds;
+            if (!bounds) return;
+            DejaVuSettings.setOverlayPosition(collapsed ? 'collapsed' : 'expanded', bounds.left, bounds.top);
+          });
+        });
+      });
+    });
+  }
+
+  function setMovable(next) {
+    movable = !!next;
+    document.body.classList.toggle('movable', movable);
+  }
+
+  function setCollapsed(next) {
+    collapsed = !!next;
+    document.body.classList.toggle('collapsed', collapsed);
   }
 
   // Shown when the background window reports GEP has stopped responding and

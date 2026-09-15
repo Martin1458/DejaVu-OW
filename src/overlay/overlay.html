@@ -30,6 +30,11 @@
       color: #f4f4f6;
       font-size: 13px;
     }
+    /* Only while the Settings toggle is on: the whole panel is the drag
+       handle, so it says so with the cursor (see overlay.js). */
+    body.movable #panel {
+      cursor: move;
+    }
     #title-row {
       display: flex;
       align-items: baseline;
@@ -42,6 +47,82 @@
       letter-spacing: 0.5px;
       text-transform: uppercase;
       font-size: 11px;
+    }
+    #title-right {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+    }
+    /* Compliance: the overlay stays up during the match, so how to dismiss it
+       has to be on the panel itself, not only in onboarding. */
+    #hide-hint {
+      font-size: 10px;
+      color: rgba(244, 244, 246, 0.6);
+    }
+    #hide-hint kbd {
+      padding: 0 4px;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      border-radius: 3px;
+      font-family: inherit;
+      font-size: 10px;
+      color: #f4f4f6;
+    }
+    /* Collapsed state. The panel shrinks to its content rather than staying
+       800px wide, so what is left is a badge in the corner instead of a bar
+       across the screen. The !important rules exist because #empty and
+       #footnote carry inline display set by overlay.js. */
+    #collapsed {
+      display: none;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+    }
+    #collapsed-logo {
+      width: 22px;
+      height: 22px;
+      /* Nothing behind the badge now, so the artwork needs its own edge
+         against whatever the game happens to draw under it. */
+      filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.85));
+    }
+    #expand-key {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      color: #f4f4f6;
+      /* Same reason: an outline rather than a box, since a box is exactly what
+         the collapsed state is meant not to have. */
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9), 0 0 5px rgba(0, 0, 0, 0.75);
+    }
+    /* Collapsed, the panel is not a panel at all: no background, border or
+       shadow, just the logo and the key floating over the game. The window is
+       resized to match (see overlay-controller.js). */
+    body.collapsed #panel {
+      width: 100%;
+      /* Overwolf enforces a minimum window height (measured: 100 logical px,
+         against a badge only ~34 tall), so the window cannot shrink to fit its
+         contents. Pinning the contents to the bottom-right of that window is
+         what actually puts the badge in the corner — sizing alone left it
+         floating ~65px above the screen edge. */
+      height: 100%;
+      justify-content: flex-end;
+      padding: 6px 8px;
+      background: transparent;
+      border-color: transparent;
+      box-shadow: none;
+    }
+    body.collapsed #collapsed {
+      justify-content: flex-end;
+    }
+    body.collapsed #collapsed {
+      display: flex;
+    }
+    body.collapsed #title-row,
+    body.collapsed #feed-warning,
+    body.collapsed #empty,
+    body.collapsed #table-wrap,
+    body.collapsed #clipped-note,
+    body.collapsed #footnote {
+      display: none !important;
     }
     #match-result {
       font-size: 12px;
@@ -167,8 +248,11 @@
       font-size: 14px;
       font-weight: 700;
     }
-    .teammate .name-line { color: #8bf29b; }
-    .enemy .name-line { color: #ff9d9d; }
+    /* Teammate green and enemy red were both pale tints of near-identical
+       lightness, which at 14px on the dark panel read as the same colour at a
+       glance. Pushed apart on saturation and lightness, not just hue. */
+    .teammate .name-line { color: #2ee87f; }
+    .enemy .name-line { color: #ff5a4f; }
     .sub-line {
       margin-top: 2px;
       font-size: 11px;
@@ -240,7 +324,18 @@
   <div id="panel">
     <div id="title-row">
       <div id="title">DejaVu</div>
-      <div id="match-result"></div>
+      <div id="title-right">
+        <div id="match-result"></div>
+        <span id="hide-hint">Press <kbd id="hide-key">Alt+J</kbd> to hide</span>
+      </div>
+    </div>
+    <!-- What the panel becomes when collapsed. Alt+J swaps between this and
+         the table rather than hiding the window, so DejaVu keeps a small
+         presence in game and the key that brings the table back is always on
+         screen next to it. -->
+    <div id="collapsed">
+      <img id="collapsed-logo" src="../../icons/IconMouseOver.png" alt="DejaVu">
+      <span id="expand-key">Alt+J</span>
     </div>
     <div id="feed-warning">
       <strong>Not receiving match data</strong>
@@ -249,9 +344,10 @@
     <div id="empty">Waiting for players...</div>
     <!-- The table is wrapped so it, and only it, absorbs the squeeze when the
          panel hits its max-height: the title row, the clipped-rows note and
-         the footnote all stay visible, and rows are what get cut. This window
-         is clickthrough, so the overflow can never be scrolled — #clipped-note
-         below is the only way the player learns rows are missing. -->
+         the footnote all stay visible, and rows are what get cut. The overflow
+         is deliberately not scrollable — during live play the game holds the
+         mouse, so #clipped-note below is what tells the player rows are
+         missing. -->
     <div id="table-wrap">
       <table id="table" style="display:none">
         <thead id="head"></thead>
@@ -260,14 +356,14 @@
     </div>
     <div id="clipped-note"></div>
     <!-- Kept short on purpose: the column headers now carry the labelling this
-         used to do. Note the `title` tooltips overlay.js sets on those headers
-         can never actually appear — this window is `clickthrough` in the
-         manifest, so it receives no mouse events at all and nothing here is
-         hoverable. They are left in place for the History window's benefit and
-         in case a peek mode ever makes this window interactive; this footnote
-         is the only column explanation the player can really get. -->
-    <div id="footnote">DejaVu counts this match, so 1 means your first time together. K/D columns are <span class="kd-num kd-you">your kills</span>/<span class="kd-num kd-them">your deaths</span>. Choose what shows here in Settings (Alt+H).</div>
+         used to do. The `title` tooltips overlay.js sets on those headers do
+         work now that the window takes the mouse, but only where the game
+         leaves a cursor to hover with (menus, lobby, scoreboard) — so this
+         footnote stays the explanation the player can always read. -->
+    <div id="footnote">DejaVu counts this match, so 1 means your first time together. K/D columns are <span class="kd-num kd-you">your kills</span>/<span class="kd-num kd-them">your deaths</span>. Choose what shows here in Settings (<span id="history-key">Alt+H</span>).</div>
   </div>
+  <script src="../common/hotkeys.js"></script>
+  <script src="../background/settings.js"></script>
   <script src="hero-icons.js"></script>
   <script src="overlay.js"></script>
 </body>

@@ -21,6 +21,32 @@
     if (window.DejaVuFileLog) DejaVuFileLog.log('[history] ' + line);
   }
 
+  // Overwolf's product guidelines want the hotkeys discoverable from inside
+  // the app, and Overwolf's own settings are the only place they can be
+  // changed — so print what is actually bound, not the manifest defaults, and
+  // follow along if the user rebinds one while this window is open.
+  function renderHotkeys() {
+    var el = document.getElementById('hotkey-list');
+    var rows = [
+      { name: 'toggle_overlay', text: 'show or hide the overlay during a match' },
+      { name: 'open_history', text: 'open this window' }
+    ];
+    DejaVuHotkeys.watch(function (keys) {
+      logDiag('hotkeys shown in settings: ' + JSON.stringify(keys));
+      el.textContent = '';
+      rows.forEach(function (row) {
+        var line = document.createElement('div');
+        var key = document.createElement('b');
+        // Built as nodes rather than innerHTML: the binding string comes from
+        // outside this window.
+        key.textContent = DejaVuHotkeys.label(keys, row.name) || 'Not set';
+        line.appendChild(key);
+        line.appendChild(document.createTextNode(' — ' + row.text));
+        el.appendChild(line);
+      });
+    });
+  }
+
   function init() {
     DejaVuFileLog.init();
     logDiag('history window init start');
@@ -83,8 +109,35 @@
       });
     });
 
+    var movableEl = document.getElementById('overlay-movable');
+    movableEl.checked = DejaVuSettings.isOverlayMovable();
+    movableEl.addEventListener('change', function () {
+      var movable = movableEl.checked;
+      DejaVuSettings.setOverlayMovable(movable);
+      // Applied straight to the overlay window from here rather than routed
+      // through the background window: any window can act on another declared
+      // window, and this way the change takes effect while the user is looking
+      // at it instead of at the next match.
+      DejaVuWindows.setInputPassThrough('overlay', !movable);
+      overwolf.windows.obtainDeclaredWindow('overlay', function (result) {
+        if (!result || !result.success || !result.window) return;
+        overwolf.windows.sendMessage(result.window.id, 'input-mode', { movable: movable }, function () {});
+      });
+      logDiag('overlay movable -> ' + movable);
+    });
+
+    document.getElementById('reset-overlay-position').addEventListener('click', function () {
+      // A window dragged off a monitor that is no longer attached would
+      // otherwise be unreachable, since the overlay only exists in game.
+      DejaVuSettings.clearOverlayPositions();
+      document.getElementById('reset-position-status').textContent =
+        'Back to the default corners at the next match.';
+      logDiag('overlay positions reset');
+    });
+
     initTierPicker();
     initOverlayTogglePicker();
+    renderHotkeys();
     logDiag('init complete, current tier = ' + DejaVuSettings.getDetailLevel());
     load();
   }

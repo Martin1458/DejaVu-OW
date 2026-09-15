@@ -26,6 +26,7 @@
         <a href="#features">Features</a>
         <a href="#privacy">Privacy</a>
         <a href="#faq">FAQ</a>
+        <a href="#changelog">Changelog</a>
         <span class="button small pending" data-store-link>Coming soon</span>
       </nav>
     </div>
@@ -42,7 +43,7 @@
           <span class="button pending" data-store-link>Coming soon to Overwolf</span>
         </div>
         <div class="hero-shot">
-          <img src="assets/overlay.png" width="800" height="586"
+          <img src="assets/overlay.png" width="800" height="760"
                alt="In-match overlay showing past encounters, records, and heroes for each player">
         </div>
       </div>
@@ -141,10 +142,10 @@
           <div class="feature-text">
             <h2>Show only what you care about</h2>
             <p>Turn any overlay column on or off at any time.</p>
-            <p>Press <kbd>Alt+H</kbd> and click the gear to open settings. Press <kbd>Alt+G</kbd> during a match to hide or show the overlay.</p>
+            <p>Press <kbd>Alt+H</kbd> and click the gear to open settings. Press <kbd>Alt+J</kbd> during a match to hide or show the overlay.</p>
           </div>
           <div class="feature-shot">
-            <img src="assets/settings.png" width="958" height="680" loading="lazy"
+            <img src="assets/settings.png" width="958" height="820" loading="lazy"
                  alt="Settings for detail level and overlay columns">
           </div>
         </div>
@@ -209,7 +210,41 @@
       </div>
     </section>
 
-    <section class="closing band" style="--i:6">
+    <section class="band" id="changelog" style="--i:6">
+      <div class="wrap changelog">
+        <h2>Changelog</h2>
+        <p class="section-intro">What changed in each build.</p>
+
+        <article>
+          <h3>0.3.0 <span class="release-date">15 September 2026</span></h3>
+          <ul>
+            <li>The overlay hotkey moved from <kbd>Alt+G</kbd> to <kbd>Alt+J</kbd>, because NVIDIA's overlay claims Alt+G for itself.</li>
+            <li>The overlay now stays on screen: <kbd>Alt+J</kbd> switches between the full table and a small badge in the corner.</li>
+            <li>You can drag the overlay where you want it, and it remembers. Turn it on in Settings.</li>
+            <li>Teammate and enemy names are easier to tell apart at a glance.</li>
+            <li>Settings shows your hotkeys, always the ones actually bound.</li>
+          </ul>
+        </article>
+
+        <article>
+          <h3>0.2.0 <span class="release-date">14 September 2026</span></h3>
+          <ul>
+            <li>A welcome screen on first run for choosing what DejaVu remembers.</li>
+            <li>The overlay now says so when Overwolf's match data stops arriving, and how to fix it.</li>
+            <li>App icons, and the overlay window finally respects its own size.</li>
+          </ul>
+        </article>
+
+        <article>
+          <h3>0.1.0 <span class="release-date">7 September 2026</span></h3>
+          <ul>
+            <li>The first build: the in-game overlay, your searchable player history, notes and tags, leaderboards, three detail levels, and JSON export and import.</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section class="closing band" style="--i:7">
       <div class="wrap">
         <h2>Never forget a player again</h2>
         <p class="section-intro">DejaVu remembers every player you meet, so you don't have to.</p>
@@ -219,7 +254,7 @@
 
   </main>
 
-  <footer class="band" style="--i:7">
+  <footer class="band" style="--i:8">
     <div class="wrap footer-row">
       <p>Made by Martin Trasak</p>
       <p>DejaVu is not affiliated with or endorsed by Blizzard Entertainment. Overwatch is a trademark of Blizzard Entertainment, Inc.</p>

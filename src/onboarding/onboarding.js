@@ -41,42 +41,15 @@
     if (window.DejaVuFileLog) DejaVuFileLog.log('[onboarding] ' + line);
   }
 
-  // Overwolf persists a hotkey binding once registered, so the manifest's
-  // `default` is only ever a seed — a user who rebound Alt+H would be told the
-  // wrong key by hardcoded text. Read what is actually in force instead. Falls
-  // back to the manifest defaults when the API gives us nothing, which is what
-  // a fresh install will report before anything has been pressed.
+  // The bindings actually in force (see src/common/hotkeys.js) — the manifest
+  // defaults printed in the HTML are only a seed for a fresh install.
   function applyLiveHotkeys() {
-    if (!window.overwolf || !overwolf.settings || !overwolf.settings.hotkeys) return;
-
-    overwolf.settings.hotkeys.get(function (result) {
-      if (!result || !result.success) {
-        logDiag('hotkeys.get failed, keeping manifest defaults -> ' + JSON.stringify(result));
-        return;
-      }
-
-      // A hotkey can be registered per-game or globally depending on how it was
-      // assigned; check both rather than assuming which list it landed in.
-      var candidates = [];
-      if (result.games && result.games[GAME_ID]) candidates = candidates.concat(result.games[GAME_ID]);
-      if (result.globals) candidates = candidates.concat(result.globals);
-
-      function bindingFor(name) {
-        for (var i = 0; i < candidates.length; i++) {
-          if (candidates[i] && candidates[i].name === name && candidates[i].binding) {
-            return candidates[i].binding;
-          }
-        }
-        return null;
-      }
-
-      var history = bindingFor('open_history');
-      var overlay = bindingFor('toggle_overlay');
+    DejaVuHotkeys.watch(function (keys) {
+      var history = DejaVuHotkeys.label(keys, 'open_history');
+      var overlay = DejaVuHotkeys.label(keys, 'toggle_overlay');
       logDiag('live hotkeys: open_history=' + history + ' toggle_overlay=' + overlay);
-
-      // "Unassigned" is Overwolf's own wording for a hotkey with no binding.
-      if (history) document.getElementById('kbd-history').textContent = history;
-      if (overlay) document.getElementById('kbd-overlay').textContent = overlay;
+      document.getElementById('kbd-history').textContent = history || DejaVuHotkeys.UNASSIGNED;
+      document.getElementById('kbd-overlay').textContent = overlay || DejaVuHotkeys.UNASSIGNED;
     });
   }
 

@@ -297,6 +297,34 @@ summary::after {
 details[open] summary::after { content: "\2212"; }
 details p { color: var(--text-dim); margin: 10px 0 0; }
 
+/* changelog */
+.changelog { max-width: 760px; }
+.changelog article {
+  border-bottom: 1px solid var(--line);
+  padding: 18px 0;
+}
+.changelog article:last-child { border-bottom: 0; }
+.changelog h3 {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 0 0 10px;
+  font-size: 18px;
+}
+.changelog .release-date {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--text-faint);
+}
+.changelog ul {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--text-dim);
+}
+.changelog li { margin-bottom: 6px; }
+.changelog li:last-child { margin-bottom: 0; }
+
 /* closing call to action */
 .closing { text-align: center; }
 .closing .section-intro { margin-left: auto; margin-right: auto; }

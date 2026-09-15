@@ -206,6 +206,18 @@ var DejaVuWindows = (function () {
             return;
           }
 
+          // Overwolf refuses to make a window smaller than its own minimum
+          // (100 logical px tall, measured 2026-09-15). Without this the ratio
+          // correction below reads that floor as a scaling factor and chases
+          // it down through 13, 5, 2, 1, 0 — six pointless calls ending in a
+          // "gave up" line that reads like a bug rather than a limit.
+          if (got.width >= wantW && got.height >= wantH && reqW <= wantW && reqH <= wantH) {
+            noteSize("ensureSize(" + name + "): window will not go below " + got.width + "x" + got.height +
+              " (wanted " + wantW + "x" + wantH + ") — that is Overwolf’s minimum, using it as is");
+            if (cb) cb(true);
+            return;
+          }
+
           if (attempt >= MAX_SIZE_ATTEMPTS || !got.width || !got.height) {
             noteSize('ensureSize(' + name + '): gave up after ' + attempt + ' attempt(s) — window is logical ' +
               got.width + 'x' + got.height + ', wanted ' + wantW + 'x' + wantH +
@@ -230,5 +242,132 @@ var DejaVuWindows = (function () {
     });
   }
 
-  return { show: show, hide: hide, ensureSize: ensureSize };
+  // Clickthrough, switched at runtime. The manifest declares the overlay
+  // interactive (clickthrough: false) and this adds Overwolf's InputPassThrough
+  // style on top to hand the mouse back to the game — which is the direction
+  // the API supports, since setWindowStyle only ever *adds* the style and
+  // removeWindowStyle takes it away again.
+  function setInputPassThrough(name, passThrough, cb) {
+    if (!overwolf.windows.setWindowStyle || !overwolf.windows.removeWindowStyle) {
+      logDiag('setInputPassThrough(' + name + '): not supported by this Overwolf version, leaving the window as declared');
+      if (cb) cb(false);
+      return;
+    }
+    withWindow(name, function (id) {
+      var apply = passThrough ? overwolf.windows.setWindowStyle : overwolf.windows.removeWindowStyle;
+      apply(id, 'InputPassThrough', function (result) {
+        logDiag((passThrough ? 'setWindowStyle' : 'removeWindowStyle') + '(' + name +
+          ', InputPassThrough) -> ' + JSON.stringify(result));
+        if (cb) cb(!!(result && result.success));
+      });
+    });
+  }
+
+  // changeSize turned out to take physical pixels while logicalBounds reports
+  // logical ones (see applySize), and changePosition's docs only say it
+  // "calculates DPI" without saying which way — getting that wrong by a 1.5x
+  // scale factor parks a window far off-screen, where a clickthrough overlay
+  // cannot be dragged back. So this measures rather than assumes: place it, see
+  // where it landed, correct once by the observed ratio. That converges
+  // whichever unit changePosition really wants, and costs one extra call when
+  // the first guess was already right.
+  var MAX_PLACE_ATTEMPTS = 3;
+
+  function logicalPositionOf(win) {
+    if (win && win.logicalBounds && win.logicalBounds.top != null) {
+      return { left: win.logicalBounds.left, top: win.logicalBounds.top };
+    }
+    return null;
+  }
+
+  // want is in logical pixels, like logicalBounds and ensureSize.
+  function placeAt(name, left, top, cb) {
+    overwolf.windows.obtainDeclaredWindow(name, function (result) {
+      if (!result.success || !result.window) {
+        noteSize('placeAt(' + name + '): could not obtain window -> ' + JSON.stringify(result));
+        if (cb) cb(false);
+        return;
+      }
+      var want = { left: Math.max(0, Math.round(left)), top: Math.max(0, Math.round(top)) };
+      var scale = result.window.dpiScale || 1;
+      applyPosition(name, want, { left: Math.round(want.left * scale), top: Math.round(want.top * scale) }, 1, cb);
+    });
+  }
+
+  // Bottom-right of the monitor the game is on — the same one ensureSize
+  // measures, since this positions an in-game window.
+  var CORNER_MARGIN = 12;
+
+  function placeBottomRight(name, cb) {
+    monitorLogicalSize(function (screen) {
+      if (!screen) {
+        noteSize('placeBottomRight(' + name + '): no monitor info — leaving the window where it is');
+        if (cb) cb(false);
+        return;
+      }
+      overwolf.windows.obtainDeclaredWindow(name, function (result) {
+        if (!result.success || !result.window) {
+          noteSize('placeBottomRight(' + name + '): could not obtain window -> ' + JSON.stringify(result));
+          if (cb) cb(false);
+          return;
+        }
+        var size = logicalSizeOf(result.window);
+        placeAt(name,
+          Math.max(0, screen.width - size.width - CORNER_MARGIN),
+          Math.max(0, screen.height - size.height - CORNER_MARGIN), cb);
+      });
+    });
+  }
+
+  function applyPosition(name, want, req, attempt, cb) {
+    overwolf.windows.obtainDeclaredWindow(name, function (result) {
+      if (!result.success || !result.window) {
+        if (cb) cb(false);
+        return;
+      }
+      overwolf.windows.changePosition(result.window.id, req.left, req.top, function (res) {
+        overwolf.windows.obtainDeclaredWindow(name, function (after) {
+          var got = logicalPositionOf(after && after.window);
+          if (!got) {
+            noteSize('placeAt(' + name + '): window reports no position, stopping after attempt ' + attempt);
+            if (cb) cb(false);
+            return;
+          }
+          if (Math.abs(got.top - want.top) <= 4 && Math.abs(got.left - want.left) <= 4) {
+            noteSize('placeAt(' + name + '): now at logical ' + got.left + ',' + got.top + ' — correct');
+            if (cb) cb(true);
+            return;
+          }
+          if (attempt >= MAX_PLACE_ATTEMPTS) {
+            noteSize('placeAt(' + name + '): gave up after ' + attempt + ' attempt(s) — at logical ' +
+              got.left + ',' + got.top + ', wanted ' + want.left + ',' + want.top +
+              ', last response ' + JSON.stringify(res));
+            if (cb) cb(false);
+            return;
+          }
+          // Same ratio correction as applySize. A got of 0 means the window
+          // clamped rather than scaled, so fall back to the logical value.
+          var next = {
+            left: got.left > 0 ? Math.round(req.left * want.left / got.left) : want.left,
+            top: got.top > 0 ? Math.round(req.top * want.top / got.top) : want.top
+          };
+          if (next.left === req.left && next.top === req.top) {
+            noteSize('placeAt(' + name + '): stuck at logical ' + got.left + ',' + got.top);
+            if (cb) cb(false);
+            return;
+          }
+          applyPosition(name, want, next, attempt + 1, cb);
+        });
+      });
+    });
+  }
+
+  return {
+    show: show,
+    hide: hide,
+    ensureSize: ensureSize,
+    setInputPassThrough: setInputPassThrough,
+    placeAt: placeAt,
+    placeBottomRight: placeBottomRight
+  };
 })();

@@ -37,10 +37,15 @@ overwolf.settings.hotkeys.get(function (result) {
   DejaVuFileLog.logImportant(line);
 });
 
+// Put the overlay up straight away, collapsed to its badge. It is in_game_only
+// so this shows nothing on the desktop; in game it is what tells the player
+// DejaVu is running and which key opens the table.
+DejaVuOverlayController.init();
+
 overwolf.settings.hotkeys.onPressed.addListener(function (event) {
   DejaVuFileLog.log('hotkey pressed: ' + (event && event.name));
   if (event.name === 'toggle_overlay') {
-    DejaVuOverlayController.toggleVisibility();
+    DejaVuOverlayController.toggleCollapsed();
   }
   if (event.name === 'open_history') {
     DejaVuWindows.show('history');

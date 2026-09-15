@@ -3,7 +3,7 @@
   "type": "WebApp",
   "meta": {
     "name": "DejaVu - OW",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "minimum-overwolf-version": "0.245.0",
     "author": "Martin Trasak",
     "icon": "icons/IconMouseOver.png",
@@ -17,7 +17,7 @@
     "hotkeys": {
       "toggle_overlay": {
         "title": "Show/hide DejaVu overlay",
-        "default": "Alt+G"
+        "default": "Alt+J"
       },
       "open_history": {
         "title": "Open DejaVu player history",
@@ -32,7 +32,9 @@
       "overlay": {
         "file": "src/overlay/overlay.html",
         "transparent": true,
-        "clickthrough": true,
+        "clickthrough": false,
+        "grab_keyboard_focus": false,
+        "keep_window_location": true,
         "resizable": false,
         "show_in_taskbar": false,
         "in_game_only": true,

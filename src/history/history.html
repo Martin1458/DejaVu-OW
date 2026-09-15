@@ -476,8 +476,26 @@
           <label><input type="checkbox" data-toggle="showMatchKD"> Kills and deaths against them, this match</label>
         </div>
       </div>
+
+      <div class="modal-section">
+        <h3>Overlay position</h3>
+        <div class="tier-row">
+          <label><input type="checkbox" id="overlay-movable"> Let me drag the overlay in game</label>
+        </div>
+        <div class="hint" style="margin-top: 0; margin-bottom: 6px;">While this is on, the overlay takes the mouse so you can drag it — the table and the badge each remember where you put them. While it is off, clicks pass straight through to the game.</div>
+        <button id="reset-overlay-position">Reset overlay position</button>
+        <div id="reset-position-status" class="hint"></div>
+      </div>
+
+      <div class="modal-section">
+        <h3>Hotkeys</h3>
+        <div class="hint" id="hotkey-list"></div>
+        <div class="hint">Change these in Overwolf's own settings, under Hotkeys.</div>
+      </div>
     </div>
   </div>
+  <script src="../common/hotkeys.js"></script>
+  <script src="../background/window-utils.js"></script>
   <script src="../background/file-logger.js"></script>
   <script src="../background/storage.js"></script>
   <script src="../background/settings.js"></script>
