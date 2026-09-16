@@ -65,6 +65,12 @@ overwolf.extensions.onAppLaunchTriggered.addListener(function (event) {
 });
 
 DejaVuGep.init({
+  // The overlay's size and corner were worked out for the old screen; redo
+  // them for the new one rather than waiting for the next toggle or match.
+  onResolutionChanged: function () {
+    DejaVuOverlayController.refreshShape();
+  },
+
   // players: full current roster (merged) — not logged in full every tick, since
   // that's what made the debug log balloon to 12MB in one match. changed: just the
   // slot(s) this update touched, which is what's actually worth reading.

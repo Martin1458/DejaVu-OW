@@ -391,8 +391,14 @@ var DejaVuOverlayController = (function () {
     sendDisplayMode();
   }
 
+  function refreshShape() {
+    logDiag('game resolution changed — re-sizing and re-placing the overlay');
+    applyShape();
+  }
+
   return {
     init: init,
+    refreshShape: refreshShape,
     resetMatch: resetMatch,
     syncRoster: syncRoster,
     handleFeedStateChanged: handleFeedStateChanged,

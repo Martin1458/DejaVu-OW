@@ -71,10 +71,6 @@
     if (message.id === 'match-result') {
       renderMatchResult(message.content.result);
     }
-    // An older background window never sends this, in which case the warning
-    // simply stays hidden and the panel behaves exactly as it did before —
-    // same degrade-quietly rule the `columns` payload follows, since either
-    // window can be running its own build until Overwolf is restarted.
     // Alt+J: the background flips this rather than hiding the window.
     if (message.id === 'display-mode') {
       setCollapsed(message.content && message.content.collapsed);
@@ -85,6 +81,10 @@
     if (message.id === 'input-mode') {
       setMovable(message.content && message.content.movable);
     }
+    // An older background window never sends this, in which case the warning
+    // simply stays hidden and the panel behaves exactly as it did before —
+    // same degrade-quietly rule the `columns` payload follows, since either
+    // window can be running its own build until Overwolf is restarted.
     if (message.id === 'feed-state') {
       renderFeedState(message.content && message.content.failed);
     }
@@ -100,17 +100,28 @@
   // own result, whose shape differs between Overwolf versions, and is stored
   // per mode: the badge and the table are different shapes in different
   // corners, so one position cannot serve both.
+  //
+  // The window id is looked up once, up front, so dragMove starts on the press
+  // itself. It used to be fetched inside the handler, which put an async
+  // round-trip between the button going down and the drag starting — a quick
+  // press could be released before dragMove ever ran, which read as the badge
+  // "sometimes" refusing to move (2026-09-16).
   function initDragging() {
+    var windowId = null;
+    overwolf.windows.getCurrentWindow(function (result) {
+      if (result && result.success && result.window) windowId = result.window.id;
+    });
+
     document.getElementById('panel').addEventListener('mousedown', function (e) {
-      if (e.button !== 0 || !movable) return;
-      overwolf.windows.getCurrentWindow(function (result) {
-        if (!result || !result.success || !result.window) return;
-        overwolf.windows.dragMove(result.window.id, function () {
-          overwolf.windows.getCurrentWindow(function (after) {
-            var bounds = after && after.window && after.window.logicalBounds;
-            if (!bounds) return;
-            DejaVuSettings.setOverlayPosition(collapsed ? 'collapsed' : 'expanded', bounds.left, bounds.top);
-          });
+      if (e.button !== 0 || !movable || !windowId) return;
+      // Otherwise the press also starts a text selection, which competes with
+      // the drag.
+      e.preventDefault();
+      overwolf.windows.dragMove(windowId, function () {
+        overwolf.windows.getCurrentWindow(function (after) {
+          var bounds = after && after.window && after.window.logicalBounds;
+          if (!bounds) return;
+          DejaVuSettings.setOverlayPosition(collapsed ? 'collapsed' : 'expanded', bounds.left, bounds.top);
         });
       });
     });

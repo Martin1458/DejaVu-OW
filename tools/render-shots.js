@@ -158,12 +158,64 @@ function harness(srcRel, outRel, tailScript) {
   return outPath;
 }
 
+// How Edge actually behaves here, measured 2026-09-16 — each point cost a
+// broken render before it was understood:
+//  - headless Edge writes the screenshot and then does NOT exit, so waiting
+//    for the process hangs forever;
+//  - while any Edge is still running on a profile, a new call on that profile
+//    hands its URL over and returns in ~50 ms having drawn nothing. That is how
+//    every website image once came out as Edge's "File not found" page: the
+//    capture happened later, after the harnesses had been deleted;
+//  - a --user-data-dir written with backslashes behaved the same way, so paths
+//    are passed with forward slashes.
+// So each shot gets its own fresh profile, the script waits for the file to
+// appear and stop growing, then kills that Edge's whole process tree itself.
+const os = require('os');
+const { spawn } = require('child_process');
+
+const fwd = (p) => p.split('\\').join('/');
+
+function sleep(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function killTree(pid) {
+  try { execFileSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' }); } catch (e) {}
+}
+
 function shot(file, outPng, w, h, transparent) {
-  const args = ['--headless=new', '--disable-gpu', '--hide-scrollbars',
+  const profile = fwd(fs.mkdtempSync(path.join(os.tmpdir(), 'dejavu-render-')));
+  const scratchDir = fwd(fs.mkdtempSync(path.join(os.tmpdir(), 'dejavu-shot-')));
+  // Captured to a scratch file and copied over only once it is complete, so a
+  // failed capture errors out instead of leaving a stale image looking fine.
+  const scratch = scratchDir + '/' + path.basename(outPng);
+  const args = ['--headless=new', '--disable-gpu', '--hide-scrollbars', '--no-first-run',
+    '--user-data-dir=' + profile,
     '--virtual-time-budget=4000', '--window-size=' + w + ',' + h,
-    '--screenshot=' + outPng, 'file:///' + file.replace(/\\/g, '/')];
+    '--screenshot=' + scratch, 'file:///' + fwd(file)];
   if (transparent) args.splice(3, 0, '--default-background-color=00000000');
-  execFileSync(EDGE, args, { stdio: 'ignore' });
+
+  const child = spawn(EDGE, args, { stdio: 'ignore' });
+  const deadline = Date.now() + 60000;
+  let lastSize = -1;
+  let done = false;
+  while (Date.now() < deadline) {
+    sleep(250);
+    if (!fs.existsSync(scratch)) continue;
+    const size = fs.statSync(scratch).size;
+    if (size > 0 && size === lastSize) { done = true; break; }  // unchanged across two polls
+    lastSize = size;
+  }
+  killTree(child.pid);
+
+  if (!done) throw new Error('Edge wrote no screenshot for ' + path.basename(outPng) + ' within 60s');
+  fs.copyFileSync(scratch, outPng);
+  // Edge can hold its profile for a moment after being killed; a leftover
+  // temp folder is harmless, so never fail the run over it.
+  sleep(300);
+  for (const dir of [scratchDir, profile]) {
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
+  }
   const size = fs.statSync(outPng).size;
   console.log('  ' + path.basename(outPng) + '  ' + w + 'x' + h + '  ' + Math.round(size / 1024) + 'KB');
 }

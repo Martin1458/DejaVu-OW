@@ -285,6 +285,17 @@ var DejaVuGep = (function () {
           ' reason=' + JSON.stringify(res.reason));
       }
 
+      // The screen the overlay was sized and placed for is gone: the monitor
+      // may have switched mode and the window's scale may no longer match it.
+      // Checked on the reason list too, since not every Overwolf build sets
+      // the boolean.
+      var resolutionChanged = res && (res.resolutionChanged ||
+        (res.reason && res.reason.indexOf && res.reason.indexOf('gameResolutionChanged') !== -1));
+      if (resolutionChanged && res.gameInfo && res.gameInfo.isRunning && isOverwatch(res.gameInfo)) {
+        logDiag('onGameInfoUpdated: resolution changed to ' + res.gameInfo.width + 'x' + res.gameInfo.height);
+        if (handlers.onResolutionChanged) handlers.onResolutionChanged(res.gameInfo);
+      }
+
       var launchedIntoOverwatch =
         res && res.gameInfo && res.gameInfo.isRunning &&
         (res.runningChanged || res.gameChanged) &&

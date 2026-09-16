@@ -114,15 +114,7 @@
     movableEl.addEventListener('change', function () {
       var movable = movableEl.checked;
       DejaVuSettings.setOverlayMovable(movable);
-      // Applied straight to the overlay window from here rather than routed
-      // through the background window: any window can act on another declared
-      // window, and this way the change takes effect while the user is looking
-      // at it instead of at the next match.
-      DejaVuWindows.setInputPassThrough('overlay', !movable);
-      overwolf.windows.obtainDeclaredWindow('overlay', function (result) {
-        if (!result || !result.success || !result.window) return;
-        overwolf.windows.sendMessage(result.window.id, 'input-mode', { movable: movable }, function () {});
-      });
+      DejaVuWindows.applyOverlayMovable(movable);
       logDiag('overlay movable -> ' + movable);
     });
 

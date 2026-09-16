@@ -10,6 +10,11 @@
       background: transparent;
       overflow: hidden;
       font-family: "Segoe UI", Arial, sans-serif;
+      /* The overlay is something to glance at and drag, never to copy from —
+         and a stray selection highlight over the game looks broken. The
+         History window stays selectable, for copying battle tags. */
+      user-select: none;
+      cursor: default;
     }
     /* max-height, deliberately not height: the panel still shrinks to its
        content so a three-player lobby doesn't paint a 950px dark slab over the
@@ -105,13 +110,24 @@
          floating ~65px above the screen edge. */
       height: 100%;
       justify-content: flex-end;
-      padding: 6px 8px;
+      padding: 2px;
       background: transparent;
       border-color: transparent;
       box-shadow: none;
     }
+    /* The badge sized to its own content and pushed to the right edge, with a
+       backing at 1% alpha: invisible, but it makes the whole badge solid to
+       the mouse. A transparent window lets clicks fall through fully
+       transparent pixels, so with no background at all only the logo and the
+       letter strokes could be grabbed — a press between two letters went to
+       the game. Only the badge gets the backing; the empty rest of the window
+       stays see-through to clicks. */
     body.collapsed #collapsed {
-      justify-content: flex-end;
+      align-self: flex-end;
+      width: max-content;
+      padding: 4px 6px;
+      border-radius: 6px;
+      background: rgba(0, 0, 0, 0.01);
     }
     body.collapsed #collapsed {
       display: flex;

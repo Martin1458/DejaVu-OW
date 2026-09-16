@@ -87,11 +87,23 @@ var DejaVuWindows = (function () {
   var SCREEN_MARGIN = 120;
   var MIN_SIZE = 320;
 
-  // Which monitor Overwatch is on, in the same scaled/logical pixels that
-  // logicalBounds (and therefore applySize) works in. The overlay is an
-  // in_game_only window sitting on top of the game, so the game's monitor is
-  // the one that has to fit it — not necessarily the primary one.
-  function monitorLogicalSize(cb) {
+  // Which monitor Overwatch is on, in the same scaled/logical pixels that the
+  // named window's logicalBounds (and therefore applySize) works in. The overlay
+  // is an in_game_only window sitting on top of the game, so the game's monitor
+  // is the one that has to fit it — not necessarily the primary one.
+  //
+  // "The same pixels as the window" is the part that matters. Measured
+  // 2026-09-16 with the game in exclusive fullscreen at 1366x768 on a desktop
+  // scaled to 150%: the display mode switched, so the monitor reported
+  // 1366x768 at 100% — but the overlay window kept the desktop's dpiScale of
+  // 1.5. Dividing by the monitor's own scale said the screen was 1366x768
+  // logical, when in the window's units it was only 911x512; the collapsed
+  // badge was parked at 1204,656 (1806,984 physical) and ended up a few
+  // pixels on screen, too little to grab. So divide the monitor's physical
+  // size by the window's scale, and only fall back to the monitor's when the
+  // window cannot be read. The two agree on an ordinary desktop, which is why
+  // this only ever showed up at a lowered resolution.
+  function monitorLogicalSize(name, cb) {
     if (!window.overwolf || !overwolf.utils || !overwolf.utils.getMonitorsList ||
         !overwolf.games || !overwolf.games.getRunningGameInfo) {
       cb(null);
@@ -128,21 +140,28 @@ var DejaVuWindows = (function () {
         }
         if (!target) target = list[0];
 
-        // dpiX/dpiY are DPI values where 96 == 100% scaling, and width/height
-        // are physical pixels; logicalBounds is in scaled pixels, so divide.
-        var scaleX = (target.dpiX || 96) / 96;
-        var scaleY = (target.dpiY || 96) / 96;
-        var size = {
-          width: Math.round((target.width || 0) / scaleX),
-          height: Math.round((target.height || 0) / scaleY)
-        };
-
-        if (!size.width || !size.height) {
+        if (!target.width || !target.height) {
           logDiag('monitorLogicalSize: unusable monitor record -> ' + JSON.stringify(target));
           cb(null);
           return;
         }
-        cb(size);
+
+        overwolf.windows.obtainDeclaredWindow(name, function (result) {
+          // dpiX is a DPI value where 96 == 100% scaling; width/height are
+          // physical pixels.
+          var monitorScale = (target.dpiX || 96) / 96;
+          var windowScale = result && result.success && result.window && result.window.dpiScale;
+          var scale = windowScale || monitorScale;
+          // Floored, not rounded: 1366 / 1.5 is 910.67, and rounding up to
+          // 911 let a window clamped flush to the edge end one physical
+          // pixel past it.
+          cb({
+            width: Math.floor(target.width / scale),
+            height: Math.floor(target.height / scale),
+            scale: scale,
+            monitorScale: monitorScale
+          });
+        });
       });
     });
   }
@@ -153,7 +172,7 @@ var DejaVuWindows = (function () {
   // into view. Clamping here rather than at each call site means every window
   // that goes through ensureSize (overlay and onboarding both) gets it.
   function ensureSize(name, width, height, cb) {
-    monitorLogicalSize(function (screen) {
+    monitorLogicalSize(name, function (screen) {
       var w = width, h = height;
 
       if (screen) {
@@ -163,7 +182,8 @@ var DejaVuWindows = (function () {
         h = Math.min(height, maxH);
         if (w !== width || h !== height) {
           noteSize('ensureSize(' + name + '): clamped ' + width + 'x' + height + ' -> ' + w + 'x' + h +
-            ' to fit the game monitor (' + screen.width + 'x' + screen.height + ' logical)');
+            ' to fit the game monitor (' + screen.width + 'x' + screen.height + ' logical at ' +
+            screen.scale + 'x, monitor itself at ' + screen.monitorScale + 'x)');
         }
       }
 
@@ -247,6 +267,19 @@ var DejaVuWindows = (function () {
   // style on top to hand the mouse back to the game — which is the direction
   // the API supports, since setWindowStyle only ever *adds* the style and
   // removeWindowStyle takes it away again.
+  // Applies the "drag the overlay" setting to the live overlay window, from
+  // whichever window the user flipped it in (Settings or the welcome screen):
+  // clickthrough first, then a message so the overlay's move cursor matches.
+  // Done from here rather than routed through the background window — any
+  // window can act on another declared window, so the change lands while the
+  // user is looking at it. Callers persist the setting themselves.
+  function applyOverlayMovable(movable) {
+    setInputPassThrough('overlay', !movable);
+    withWindow('overlay', function (id) {
+      overwolf.windows.sendMessage(id, 'input-mode', { movable: !!movable }, function () {});
+    });
+  }
+
   function setInputPassThrough(name, passThrough, cb) {
     if (!overwolf.windows.setWindowStyle || !overwolf.windows.removeWindowStyle) {
       logDiag('setInputPassThrough(' + name + '): not supported by this Overwolf version, leaving the window as declared');
@@ -281,16 +314,37 @@ var DejaVuWindows = (function () {
   }
 
   // want is in logical pixels, like logicalBounds and ensureSize.
+  //
+  // Clamped so the whole window stays on screen. A position saved by dragging
+  // at one resolution is otherwise replayed verbatim at a smaller one — and the
+  // overlay only exists in game, so a window pushed off the edge cannot be
+  // grabbed back.
   function placeAt(name, left, top, cb) {
-    overwolf.windows.obtainDeclaredWindow(name, function (result) {
-      if (!result.success || !result.window) {
-        noteSize('placeAt(' + name + '): could not obtain window -> ' + JSON.stringify(result));
-        if (cb) cb(false);
-        return;
-      }
-      var want = { left: Math.max(0, Math.round(left)), top: Math.max(0, Math.round(top)) };
-      var scale = result.window.dpiScale || 1;
-      applyPosition(name, want, { left: Math.round(want.left * scale), top: Math.round(want.top * scale) }, 1, cb);
+    monitorLogicalSize(name, function (screen) {
+      overwolf.windows.obtainDeclaredWindow(name, function (result) {
+        if (!result.success || !result.window) {
+          noteSize('placeAt(' + name + '): could not obtain window -> ' + JSON.stringify(result));
+          if (cb) cb(false);
+          return;
+        }
+        var want = { left: Math.round(left), top: Math.round(top) };
+        if (screen) {
+          var size = logicalSizeOf(result.window);
+          var maxLeft = Math.max(0, screen.width - size.width);
+          var maxTop = Math.max(0, screen.height - size.height);
+          if (want.left > maxLeft || want.top > maxTop) {
+            noteSize('placeAt(' + name + '): ' + want.left + ',' + want.top + ' would put a ' +
+              size.width + 'x' + size.height + ' window off a ' + screen.width + 'x' + screen.height +
+              ' screen — clamped');
+          }
+          want.left = Math.min(want.left, maxLeft);
+          want.top = Math.min(want.top, maxTop);
+        }
+        want.left = Math.max(0, want.left);
+        want.top = Math.max(0, want.top);
+        var scale = result.window.dpiScale || 1;
+        applyPosition(name, want, { left: Math.round(want.left * scale), top: Math.round(want.top * scale) }, 1, cb);
+      });
     });
   }
 
@@ -299,7 +353,7 @@ var DejaVuWindows = (function () {
   var CORNER_MARGIN = 12;
 
   function placeBottomRight(name, cb) {
-    monitorLogicalSize(function (screen) {
+    monitorLogicalSize(name, function (screen) {
       if (!screen) {
         noteSize('placeBottomRight(' + name + '): no monitor info — leaving the window where it is');
         if (cb) cb(false);
@@ -367,6 +421,7 @@ var DejaVuWindows = (function () {
     hide: hide,
     ensureSize: ensureSize,
     setInputPassThrough: setInputPassThrough,
+    applyOverlayMovable: applyOverlayMovable,
     placeAt: placeAt,
     placeBottomRight: placeBottomRight
   };

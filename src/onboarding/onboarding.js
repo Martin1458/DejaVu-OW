@@ -116,12 +116,27 @@
     refreshOverlayToggleAvailability();
   }
 
+  // The same setting as the toggle in History -> Settings, offered up front:
+  // where the overlay sits is one of the first things a new player may want
+  // to change. Unlike the tier, it commits the moment it is flipped — it is
+  // off by default, so leaving the screen untouched changes nothing.
+  function initMovableToggle() {
+    var el = document.getElementById('overlay-movable');
+    el.checked = DejaVuSettings.isOverlayMovable();
+    el.addEventListener('change', function () {
+      logDiag('overlay movable -> ' + el.checked);
+      DejaVuSettings.setOverlayMovable(el.checked);
+      DejaVuWindows.applyOverlayMovable(el.checked);
+    });
+  }
+
   function init() {
     DejaVuFileLog.init();
     logDiag('onboarding window shown');
 
     initTierPicker();
     initOverlayTogglePicker();
+    initMovableToggle();
     applyLiveHotkeys();
 
     document.getElementById('start-btn').addEventListener('click', function () {
