@@ -130,10 +130,44 @@
     });
   }
 
+  // An uninstall wipes the app's history and its settings together, so a
+  // reinstall lands here — the one screen a returning player is sure to see.
+  // If a backup survived on disk (see backup.js), offer it before anything
+  // else. Only ever shown over an empty history.
+  function initRestoreOffer() {
+    DejaVuBackup.findRestoreOffer(function (backup) {
+      if (!backup) return;
+      logDiag('restore offered: ' + backup.path + ' (' + backup.players + ' players, ' + backup.at + ')');
+      document.getElementById('restore-text').textContent =
+        'Your history is empty, but DejaVu found a backup from ' +
+        new Date(Date.parse(backup.at)).toLocaleString() + ' with ' + backup.players + ' players.';
+      document.getElementById('restore-offer').style.display = '';
+
+      var button = document.getElementById('restore-yes');
+      var statusEl = document.getElementById('restore-status');
+      button.addEventListener('click', function () {
+        button.disabled = true;
+        statusEl.textContent = 'Restoring...';
+        DejaVuBackup.restore(backup.data).then(function (summary) {
+          logDiag('restored: ' + JSON.stringify(summary));
+          DejaVuBackup.releaseProtection();
+          button.style.display = 'none';
+          statusEl.textContent = 'Restored ' + (summary.added + summary.replaced) + ' players and ' +
+            summary.matches + ' matches.';
+        }).catch(function (err) {
+          logDiag('restore failed: ' + err);
+          button.disabled = false;
+          statusEl.textContent = 'Could not restore: ' + err;
+        });
+      });
+    });
+  }
+
   function init() {
-    DejaVuFileLog.init();
+    DejaVuFileLog.init('onboarding');
     logDiag('onboarding window shown');
 
+    initRestoreOffer();
     initTierPicker();
     initOverlayTogglePicker();
     initMovableToggle();

@@ -1,4 +1,4 @@
-var logFilePath = DejaVuFileLog.init();
+var logFilePath = DejaVuFileLog.init('background');
 DejaVuFileLog.log('background controller (re)started');
 DejaVuFileLog.logImportant('background controller (re)started');
 
@@ -15,6 +15,17 @@ DejaVuStorage.migrateLegacyResults().then(function (fixed) {
   DejaVuFileLog.log(line);
   DejaVuFileLog.logImportant(line);
 });
+
+// A wiped install (see backup.js) must not rotate its last good backup out
+// before the user has had the chance to restore it.
+DejaVuBackup.protectNewestIfEmpty();
+
+// One backup per match, normally at match_end. match_end isn't guaranteed to
+// fire, so a match_start that follows a match with no match_end backs up the
+// previous match instead — otherwise a session of unclean endings would never
+// be backed up at all. Starts true so the session's first match_start doesn't
+// write a backup of data that hasn't changed since the last session.
+var sawMatchEnd = true;
 
 DejaVuMatchSession.init({
   onPlayerRecognized: DejaVuOverlayController.handlePlayerRecognized,
@@ -47,8 +58,12 @@ overwolf.settings.hotkeys.onPressed.addListener(function (event) {
   if (event.name === 'toggle_overlay') {
     DejaVuOverlayController.toggleCollapsed();
   }
+  // Opens History, or closes it again if it's already up — the same key both
+  // ways, like Alt+J. The hotkey keeps its original `open_history` name:
+  // Overwolf stores bindings by name, so renaming it would silently drop any
+  // key a user had rebound it to.
   if (event.name === 'open_history') {
-    DejaVuWindows.show('history');
+    DejaVuWindows.toggle('history');
   }
 });
 
@@ -91,9 +106,15 @@ DejaVuGep.init({
     if (name === 'match_start' || name === 'match_end') {
       DejaVuFileLog.logImportant(line);
     }
+    if (name === 'match_start') {
+      if (!sawMatchEnd) DejaVuBackup.scheduleWrite('previous match had no match_end');
+      sawMatchEnd = false;
+    }
     DejaVuMatchSession.handleMatchEvent(name, data);
     if (name === 'match_end') {
+      sawMatchEnd = true;
       DejaVuOverlayController.handleMatchEnd();
+      DejaVuBackup.scheduleWrite('match end');
     }
   },
 

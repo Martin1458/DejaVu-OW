@@ -36,6 +36,23 @@ var DejaVuWindows = (function () {
     });
   }
 
+  // Hides the window when it's on screen, shows it otherwise (closed, hidden
+  // or minimized). Hidden rather than closed, so anything half-typed in it —
+  // a note in the player popup — is still there when it comes back.
+  function toggle(name, cb) {
+    overwolf.windows.obtainDeclaredWindow(name, function (result) {
+      if (!result.success) {
+        logDiag('toggle(' + name + '): obtainDeclaredWindow failed -> ' + JSON.stringify(result));
+        return;
+      }
+      var state = result.window.stateEx;
+      var onScreen = result.window.isVisible && (state === 'normal' || state === 'maximized');
+      logDiag('toggle(' + name + '): stateEx=' + state + ' isVisible=' + result.window.isVisible + ' -> ' + (onScreen ? 'hide' : 'show'));
+      if (onScreen) hide(name, cb);
+      else show(name, cb);
+    });
+  }
+
   // Overwolf only uses the manifest's `size` when it FIRST creates a window.
   // After that the window keeps the bounds it already has, so editing the
   // manifest never resizes an existing install — confirmed 2026-09-06 the hard
@@ -419,6 +436,7 @@ var DejaVuWindows = (function () {
   return {
     show: show,
     hide: hide,
+    toggle: toggle,
     ensureSize: ensureSize,
     setInputPassThrough: setInputPassThrough,
     applyOverlayMovable: applyOverlayMovable,

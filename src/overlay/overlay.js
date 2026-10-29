@@ -371,6 +371,27 @@
       sideLine.textContent = player.last_side ? 'Last time: on your team' : 'Last time: against you';
       nameCell.appendChild(sideLine);
     }
+    // Your own tags and note on them, from the History window. User text, so
+    // built as text nodes only.
+    var tags = player.tags || [];
+    if (tags.length || player.note) {
+      var notesLine = document.createElement('div');
+      notesLine.className = 'sub-line notes-line';
+      tags.forEach(function (tag) {
+        var chip = document.createElement('span');
+        chip.className = 'tag-chip';
+        chip.textContent = tag;
+        notesLine.appendChild(chip);
+      });
+      if (player.note) {
+        var noteEl = document.createElement('span');
+        noteEl.className = 'note-text';
+        noteEl.textContent = player.note.short;
+        noteEl.title = player.note.full;
+        notesLine.appendChild(noteEl);
+      }
+      nameCell.appendChild(notesLine);
+    }
     row.appendChild(nameCell);
 
     if (columns.lastHero) {

@@ -3,7 +3,7 @@
   "type": "WebApp",
   "meta": {
     "name": "DejaVu - OW",
-    "version": "0.3.5",
+    "version": "0.4.0",
     "minimum-overwolf-version": "0.245.0",
     "author": "Martin Trasak",
     "icon": "icons/IconMouseOver.png",
@@ -20,7 +20,7 @@
         "default": "Alt+J"
       },
       "open_history": {
-        "title": "Open DejaVu player history",
+        "title": "Show/hide DejaVu player history",
         "default": "Alt+H"
       }
     },

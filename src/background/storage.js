@@ -495,6 +495,52 @@ var DejaVuStorage = (function () {
     });
   }
 
+  // Every shared match with one player, newest first (plan §11 B1) — for the
+  // History Browser's "recent matches together" list. Same walk as
+  // getLastEncounter, but keeps every row instead of just the best one.
+  // Includes matches with no result yet (abandoned, or still in progress) so
+  // the list matches what actually happened; the caller labels those.
+  function getMatchesWithPlayer(tag, limit) {
+    return getParticipantsForPlayer(tag).then(function (participantRows) {
+      if (!participantRows.length) return [];
+
+      return open().then(function (db) {
+        return new Promise(function (resolve, reject) {
+          var store = db.transaction('encounters', 'readonly').objectStore('encounters');
+          var matches = [];
+          var pending = participantRows.length;
+
+          function done() {
+            pending -= 1;
+            if (pending > 0) return;
+            matches.sort(function (a, b) { return b.timestamp - a.timestamp; });
+            resolve(limit ? matches.slice(0, limit) : matches);
+          }
+
+          participantRows.forEach(function (p) {
+            var req = store.get(p.encounter_id);
+            req.onsuccess = function () {
+              var enc = req.result;
+              if (enc) {
+                matches.push({
+                  encounter_id: enc.encounter_id,
+                  timestamp: enc.timestamp,
+                  result: enc.result || null,
+                  was_teammate: p.was_teammate,
+                  hero_name: realHeroName(p.hero_name),
+                  kills: p.kills || 0,
+                  deaths: p.deaths || 0
+                });
+              }
+              done();
+            };
+            req.onerror = done;
+          });
+        });
+      });
+    });
+  }
+
   // Shared by getRecordAgainst (one player, on demand) and getAllRecords (every
   // player at once, for the History Browser table). `completed` is a list of
   // { result, timestamp, was_teammate } — only matches with a resolved result
@@ -772,6 +818,109 @@ var DejaVuStorage = (function () {
     });
   }
 
+  // Full backup (0.4.0): all three stores, not just `players`. Exporting only
+  // players meant a restore came back with every W/L record, streak and
+  // last-hero gone, since those are all computed from the per-match rows.
+  function getBackupData() {
+    return open().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction(['players', 'encounters', 'encounter_participants'], 'readonly');
+        var out = {};
+        tx.objectStore('players').getAll().onsuccess = function (e) { out.players = e.target.result; };
+        tx.objectStore('encounters').getAll().onsuccess = function (e) { out.encounters = e.target.result; };
+        tx.objectStore('encounter_participants').getAll().onsuccess = function (e) { out.encounter_participants = e.target.result; };
+        tx.oncomplete = function () { resolve(out); };
+        tx.onerror = function () { reject(tx.error); };
+      });
+    });
+  }
+
+  var VALID_RESULTS = ['victory', 'defeat', 'draw'];
+
+  // Same reasoning as sanitizeImportedPlayer: these come from a file, so every
+  // field is coerced to its schema type before it reaches the store.
+  function sanitizeImportedEncounter(incoming) {
+    if (!incoming || typeof incoming !== 'object') return null;
+    var id = asText(incoming.encounter_id);
+    var timestamp = asTimestamp(incoming.timestamp);
+    if (!id || !timestamp) return null;
+    return {
+      encounter_id: id,
+      timestamp: timestamp,
+      result: VALID_RESULTS.indexOf(incoming.result) !== -1 ? incoming.result : null,
+      map: asText(incoming.map)
+    };
+  }
+
+  function sanitizeImportedParticipant(incoming) {
+    if (!incoming || typeof incoming !== 'object') return null;
+    var encounterId = asText(incoming.encounter_id);
+    var tag = asText(incoming.battlenet_tag);
+    if (!encounterId || !tag) return null;
+    var row = {
+      encounter_id: encounterId,
+      battlenet_tag: tag,
+      hero_name: realHeroName(asText(incoming.hero_name))
+    };
+    // Left unset rather than guessed when unknown, same as a live sighting
+    // that GEP hadn't resolved a team for yet.
+    if (typeof incoming.was_teammate === 'boolean') row.was_teammate = incoming.was_teammate;
+    if (asCount(incoming.kills)) row.kills = asCount(incoming.kills);
+    if (asCount(incoming.deaths)) row.deaths = asCount(incoming.deaths);
+    return row;
+  }
+
+  // Restores the per-match rows from a full backup. Additive and idempotent:
+  // an encounter already stored is left alone, and a participant row is only
+  // added if that (match, player) pair isn't already there — so importing the
+  // same backup twice, or into an install that already has some of the same
+  // matches, never double-counts a record. Returns how many rows were added.
+  function importMatchHistory(encounters, participants) {
+    encounters = Array.isArray(encounters) ? encounters : [];
+    participants = Array.isArray(participants) ? participants : [];
+
+    return open().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction(['encounters', 'encounter_participants'], 'readwrite');
+        var encounterStore = tx.objectStore('encounters');
+        var participantStore = tx.objectStore('encounter_participants');
+        var addedEncounters = 0, addedParticipants = 0;
+
+        encounters.forEach(function (raw) {
+          var enc = sanitizeImportedEncounter(raw);
+          if (!enc) return;
+          var getReq = encounterStore.get(enc.encounter_id);
+          getReq.onsuccess = function () {
+            if (getReq.result) return;
+            encounterStore.put(enc);
+            addedEncounters++;
+          };
+        });
+
+        // Existing pairs are read before anything is added, inside the same
+        // transaction, so the duplicate check can't race a concurrent write.
+        participantStore.getAll().onsuccess = function (event) {
+          var existing = {};
+          event.target.result.forEach(function (p) {
+            existing[p.encounter_id + '\n' + p.battlenet_tag] = true;
+          });
+          participants.forEach(function (raw) {
+            var row = sanitizeImportedParticipant(raw);
+            if (!row) return;
+            var key = row.encounter_id + '\n' + row.battlenet_tag;
+            if (existing[key]) return;
+            existing[key] = true;
+            participantStore.add(row);
+            addedParticipants++;
+          });
+        };
+
+        tx.oncomplete = function () { resolve({ encounters: addedEncounters, participants: addedParticipants }); };
+        tx.onerror = function () { reject(tx.error); };
+      });
+    });
+  }
+
   return {
     getPlayer: getPlayer,
     getAllPlayers: getAllPlayers,
@@ -791,7 +940,10 @@ var DejaVuStorage = (function () {
     getLastEncounter: getLastEncounter,
     getRecordAgainst: getRecordAgainst,
     getAllRecords: getAllRecords,
+    getMatchesWithPlayer: getMatchesWithPlayer,
+    getBackupData: getBackupData,
     importPlayers: importPlayers,
+    importMatchHistory: importMatchHistory,
     clearAllPlayers: clearAllPlayers,
   };
 })();

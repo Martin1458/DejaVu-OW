@@ -186,8 +186,15 @@ var DejaVuMatchSession = (function () {
   }
 
   function handleMatchInfo(fields) {
-    if (fields && fields.match_outcome && handlers.onMatchResult) {
-      handlers.onMatchResult(fields.match_outcome);
+    if (fields && fields.match_outcome) {
+      // Rare (once or twice a match), and the only way to check afterwards
+      // that a result was actually captured — the main log's ring buffer has
+      // usually rolled past it by the end of a long session.
+      if (window.DejaVuFileLog) {
+        DejaVuFileLog.logImportant('[match-session] match result: ' + fields.match_outcome +
+          ' (encounter ' + (currentEncounterId || 'none, ' + currentTier + ' tier') + ')');
+      }
+      if (handlers.onMatchResult) handlers.onMatchResult(fields.match_outcome);
     }
 
     if (currentTier === 'basic' || !currentEncounterId || !fields) return;
@@ -353,7 +360,11 @@ var DejaVuMatchSession = (function () {
         // first-ever sighting, or a record predating this field — so the
         // overlay can tell "no data" apart from "0 matches ago" (impossible,
         // since a prior sighting can't be from the match happening right now).
-        var matchesAgo = (priorRecord && priorRecord.last_seen_match_number != null) ?
+        // currentMatchNumber is also null when the background page started
+        // mid-match and never saw this match's match_start — diffing against
+        // it then produced "-37 matches ago" (seen twice in real logs,
+        // 2026-09-11 and 2026-09-13).
+        var matchesAgo = (currentMatchNumber != null && priorRecord && priorRecord.last_seen_match_number != null) ?
           (currentMatchNumber - priorRecord.last_seen_match_number) : null;
 
         priorRecordCache[tag] = priorRecord;
@@ -377,8 +388,11 @@ var DejaVuMatchSession = (function () {
           ' lastSide=' + (lastSide === null ? 'none' : (lastSide ? 'teammate' : 'enemy'));
         logDiag(recognizedLine);
         if (window.DejaVuFileLog) DejaVuFileLog.logImportant('[match-session] ' + recognizedLine);
-        emitRecognized(player, priorRecord, lastResult, lastHero, matchStatsByTag[tag], fullRecord, matchesAgo, lastSide);
 
+        // Writes are queued before the overlay is told, not after: emitting
+        // runs the overlay controller, and anything that threw in there used to
+        // land in this chain's .catch with the sighting never saved — a display
+        // bug silently costing the player's history.
         var writes = [];
         if (!recordedThisMatch[tag]) {
           recordedThisMatch[tag] = true;
@@ -396,6 +410,13 @@ var DejaVuMatchSession = (function () {
           }
         }
         trackHeroPick(tag, player.hero_name);
+
+        try {
+          emitRecognized(player, priorRecord, lastResult, lastHero, matchStatsByTag[tag], fullRecord, matchesAgo, lastSide);
+        } catch (err) {
+          logDiag('overlay update failed for ' + tag + ' (sighting still saved): ' + err);
+        }
+
         if (writes.length) return Promise.all(writes);
       }).catch(function (err) {
         logDiag('failed to process sighting for ' + tag + ': ' + err);

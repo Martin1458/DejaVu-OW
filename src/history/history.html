@@ -110,6 +110,21 @@
       opacity: 0.55;
       font-size: 11px;
     }
+    #restore-offer {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 10px;
+      padding: 10px 12px;
+      border: 1px solid rgba(255, 196, 77, 0.45);
+      border-radius: 6px;
+      background: rgba(255, 196, 77, 0.1);
+      font-size: 12px;
+    }
+    #restore-text {
+      flex: 1 1 260px;
+    }
     #status {
       padding: 24px;
       opacity: 0.5;
@@ -329,6 +344,42 @@
     #modal-names div {
       padding: 2px 0;
     }
+    #modal-matches {
+      font-size: 12px;
+      max-height: 170px;
+      overflow-y: auto;
+    }
+    .match-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 2px 0;
+    }
+    .match-row img, .match-row .match-hero-empty {
+      width: 22px;
+      height: 22px;
+      border-radius: 3px;
+      flex: none;
+    }
+    .match-date { opacity: 0.7; width: 140px; flex: none; }
+    .match-side { width: 80px; flex: none; }
+    .match-side.with { color: #7ee787; }
+    .match-side.against { color: #ff8a8a; }
+    .match-kd { opacity: 0.8; }
+    /* Same pill colours as the overlay's W/L badges. */
+    .match-result {
+      display: inline-block;
+      min-width: 14px;
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-weight: 700;
+      text-align: center;
+      flex: none;
+    }
+    .match-result.victory { background: rgba(139, 242, 155, 0.22); color: #8bf29b; }
+    .match-result.defeat { background: rgba(255, 157, 157, 0.22); color: #ff9d9d; }
+    .match-result.draw { background: rgba(236, 217, 138, 0.22); color: #ecd98a; }
+    .match-result.unknown { background: rgba(255, 255, 255, 0.08); color: rgba(255, 255, 255, 0.5); }
     #modal-status {
       font-size: 11px;
       opacity: 0.65;
@@ -343,7 +394,12 @@
         <h1>Known players</h1>
         <button id="settings-gear-btn" class="icon-btn" title="Settings" aria-label="Settings">&#9881;</button>
       </div>
-      <input id="search" type="text" placeholder="Search name or battle tag">
+      <div id="restore-offer" class="hidden">
+        <div id="restore-text"></div>
+        <button id="restore-yes">Restore it</button>
+        <button id="restore-no">Start fresh</button>
+      </div>
+      <input id="search" type="text" placeholder="Search name, battle tag, notes or tags">
       <div id="table-wrap">
         <table>
           <thead>
@@ -411,6 +467,10 @@
         <div id="modal-record"></div>
       </div>
       <div class="modal-section">
+        <h3>Recent matches together</h3>
+        <div id="modal-matches"></div>
+      </div>
+      <div class="modal-section">
         <h3>Notes</h3>
         <textarea id="modal-notes" rows="3" placeholder="e.g. friendly, smurf?"></textarea>
       </div>
@@ -460,6 +520,9 @@
         <div class="tier-row" data-toggle-row="showRecency">
           <label><input type="checkbox" data-toggle="showRecency"> When you last played together</label>
         </div>
+        <div class="tier-row" data-toggle-row="showNotes">
+          <label><input type="checkbox" data-toggle="showNotes"> Your notes and tags on them</label>
+        </div>
         <div class="tier-row" data-toggle-row="showRecord" data-requires="standard">
           <label><input type="checkbox" data-toggle="showRecord"> Win/loss record, as teammates and as opponents</label>
         </div>
@@ -488,6 +551,14 @@
       </div>
 
       <div class="modal-section">
+        <h3>Backups</h3>
+        <div class="hint" style="margin-top: 0; margin-bottom: 6px;">A full backup is saved to Documents\DejaVu-OW\backups after every match, keeping the last three. Uninstalling Overwolf apps deletes their saved history, but not these files.</div>
+        <button id="backup-now">Back up now</button>
+        <button id="backup-open">Open backup folder</button>
+        <div id="backup-status" class="hint"></div>
+      </div>
+
+      <div class="modal-section">
         <h3>Hotkeys</h3>
         <div class="hint" id="hotkey-list"></div>
         <div class="hint">Change these in Overwolf's own settings, under Hotkeys.</div>
@@ -499,6 +570,8 @@
   <script src="../background/file-logger.js"></script>
   <script src="../background/storage.js"></script>
   <script src="../background/settings.js"></script>
+  <script src="../background/backup.js"></script>
+  <script src="../overlay/hero-icons.js"></script>
   <script src="history.js"></script>
   <script src="../common/resize-grips.js"></script>
 </body>

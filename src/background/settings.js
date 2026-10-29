@@ -23,7 +23,8 @@ var DejaVuSettings = (function () {
     showMatchKD: 'dejavu.overlay.showMatchKD',       // this match's own K/D against them (Full)
     showRecord: 'dejavu.overlay.showRecord',         // contextual teammate/enemy W-L record (Standard+)
     showRecency: 'dejavu.overlay.showRecency',       // "N matches ago / X days ago" (any tier — uses last_seen + the match counter below)
-    showMostPlayedHero: 'dejavu.overlay.showMostPlayedHero' // hero they've picked most often overall, not just last time (Standard+)
+    showMostPlayedHero: 'dejavu.overlay.showMostPlayedHero', // hero they've picked most often overall, not just last time (Standard+)
+    showNotes: 'dejavu.overlay.showNotes'            // your own notes and tags on them, written in the History window (any tier)
   };
 
   // Plan §11 ask (2026-09-06): "how many matches ago did I play them" needs

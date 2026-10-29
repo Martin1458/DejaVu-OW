@@ -38,6 +38,17 @@
     .section {
       margin-bottom: 16px;
     }
+    #restore-offer {
+      padding: 10px 12px;
+      border: 1px solid rgba(255, 196, 77, 0.45);
+      border-radius: 6px;
+      background: rgba(255, 196, 77, 0.1);
+    }
+    .restore-text {
+      font-size: 12px;
+      line-height: 1.5;
+      margin-bottom: 8px;
+    }
     .section h2 {
       font-size: 12px;
       text-transform: uppercase;
@@ -204,6 +215,12 @@
     <p id="lede">DejaVu remembers who you play with and against, and shows their history in an overlay during your match.</p>
 
     <div id="scroll">
+      <div id="restore-offer" class="section" style="display: none;">
+        <h2>Welcome back</h2>
+        <div id="restore-text" class="restore-text"></div>
+        <button id="restore-yes" type="button">Restore my history</button>
+        <div id="restore-status" class="hint"></div>
+      </div>
       <div class="section">
         <h2>What DejaVu remembers</h2>
 
@@ -245,6 +262,9 @@
         <div class="tier-row" data-toggle-row="showRecency">
           <label><input type="checkbox" data-toggle="showRecency"> When you last played together</label>
         </div>
+        <div class="tier-row" data-toggle-row="showNotes">
+          <label><input type="checkbox" data-toggle="showNotes"> Your notes and tags on them</label>
+        </div>
         <div class="tier-row" data-toggle-row="showRecord" data-requires="standard">
           <label><input type="checkbox" data-toggle="showRecord"> Win/loss record, as teammates and as opponents</label>
         </div>
@@ -278,7 +298,7 @@
             <span id="demo-gear">&#9881;</span>
           </div>
           <div id="demo-body">
-            Press <kbd id="kbd-history">Alt+H</kbd> to open your player history, then click the <b>&#9881;</b> for these same settings.
+            Press <kbd id="kbd-history">Alt+H</kbd> to open or close your player history, then click the <b>&#9881;</b> for these same settings.
             <br>Press <kbd id="kbd-overlay">Alt+J</kbd> during a match to hide or show the overlay.
           </div>
         </div>
@@ -296,6 +316,8 @@
   <script src="../common/hotkeys.js"></script>
   <script src="../background/file-logger.js"></script>
   <script src="../background/settings.js"></script>
+  <script src="../background/storage.js"></script>
+  <script src="../background/backup.js"></script>
   <script src="../background/window-utils.js"></script>
   <script src="onboarding.js"></script>
 </body>

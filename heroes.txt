@@ -5,8 +5,9 @@ Baptiste
 Bastion 
 Brigitte 
 Cassidy 
-Dmon 
-Domina 
+Dmon
+Doctrine
+Domina
 Doomfist 
 Dva 
 Echo 

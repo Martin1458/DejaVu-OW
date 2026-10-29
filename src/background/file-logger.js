@@ -28,20 +28,48 @@ var DejaVuFileLog = (function () {
   var pendingFlush = null;
   var pendingImportantFlush = null;
 
-  function pad(n) { return n < 10 ? '0' + n : '' + n; }
+  // Every background start used to open a new timestamped file pair, and so
+  // did every History/onboarding window open — nothing ever removed them
+  // (overwolf.io has no delete), and they lived under Documents, which
+  // OneDrive syncs. Measured 2026-10-29: 199 files, 91MB. Now the background
+  // page rotates through a fixed set of session slots and every other window
+  // owns one file it overwrites, so the folder can never hold more than
+  // BACKGROUND_SLOTS * 2 + one per window.
+  var BACKGROUND_SLOTS = 5;
+  var KEY_LOG_SLOT = 'dejavu.logSlot';
 
-  function timestampForFilename(date) {
-    return date.getFullYear() + pad(date.getMonth() + 1) + pad(date.getDate()) +
-      '-' + pad(date.getHours()) + pad(date.getMinutes()) + pad(date.getSeconds());
+  function logDir() {
+    var base = (overwolf.io.paths && overwolf.io.paths.localAppData) || overwolf.io.paths.documents;
+    return base + '\\DejaVu-OW\\logs';
   }
 
-  function init() {
+  // Read straight from localStorage rather than via DejaVuSettings, which the
+  // background page loads after this file.
+  function nextBackgroundSlot() {
+    var slot = 1;
+    try {
+      var last = parseInt(localStorage.getItem(KEY_LOG_SLOT), 10);
+      slot = (isNaN(last) ? 0 : last) % BACKGROUND_SLOTS + 1;
+      localStorage.setItem(KEY_LOG_SLOT, String(slot));
+    } catch (e) {
+      console.warn('[DejaVuFileLog] localStorage unavailable, reusing slot 1', e);
+    }
+    return slot;
+  }
+
+  // windowName: 'background' (the default) rotates through session slots;
+  // anything else ('history', 'onboarding') gets a single file of its own.
+  function init(windowName) {
     var now = new Date();
-    var stamp = timestampForFilename(now);
-    filePath = overwolf.io.paths.documents + '\\DejaVu-OW\\logs\\gep-' + stamp + '.txt';
-    importantFilePath = overwolf.io.paths.documents + '\\DejaVu-OW\\logs\\gep-' + stamp + '-lifecycle.txt';
-    log('=== DejaVu GEP log started ' + now.toISOString() + ' ===');
-    logImportant('=== DejaVu lifecycle log started ' + now.toISOString() + ' ===');
+    var name = windowName || 'background';
+    var base = logDir() + '\\' + (name === 'background' ? name + '-' + nextBackgroundSlot() : name);
+    filePath = base + '.txt';
+    importantFilePath = base + '-lifecycle.txt';
+    log('=== DejaVu ' + name + ' log started ' + now.toISOString() + ' ===');
+    // Queued without a flush: windows that never log anything important
+    // shouldn't leave an empty lifecycle file behind. The first real
+    // logImportant() writes this header along with it.
+    importantBuffer.push('[' + now.toISOString() + '] === DejaVu ' + name + ' lifecycle log started ===');
     console.log('[DejaVuFileLog] writing to', filePath);
     return filePath;
   }

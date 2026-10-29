@@ -59,6 +59,10 @@ var DejaVuOverlayController = (function () {
   var EXPANDED_LEFT = 20;
   var EXPANDED_TOP = 100;
 
+  // How much of a player's note fits on its sub-line under the name without
+  // wrapping at the overlay's width.
+  var NOTE_PREVIEW_CHARS = 60;
+
   function showOverlay() {
     applyShape();
     DejaVuWindows.show(OVERLAY_WINDOW, function () {
@@ -223,8 +227,28 @@ var DejaVuOverlayController = (function () {
       record_against: null,
       recency: null,
       most_played_hero: null,
-      last_side: null
+      last_side: null,
+      tags: [],
+      note: null
     };
+
+    // Your own notes and tags on them (written in the History window). Until
+    // now these were only visible there, never in the match where they'd
+    // actually help. The note is cut down to fit a sub-line; the overlay puts
+    // the whole thing in a tooltip. Read from priorRecord, so a note edited
+    // mid-match shows up from the next match.
+    if (DejaVuSettings.getOverlayToggle('showNotes') && priorRecord) {
+      if (Array.isArray(priorRecord.tags)) {
+        row.tags = priorRecord.tags.filter(function (t) { return typeof t === 'string' && t; });
+      }
+      var note = typeof priorRecord.notes === 'string' ? priorRecord.notes.trim() : '';
+      if (note) {
+        row.note = {
+          short: note.length > NOTE_PREVIEW_CHARS ? note.slice(0, NOTE_PREVIEW_CHARS).trim() + '…' : note,
+          full: note
+        };
+      }
+    }
 
     // Which side they were on last time you met (2026-09-06 ask), shown under
     // the name where the most-played hero used to sit. Rides the same toggle as
@@ -363,7 +387,10 @@ var DejaVuOverlayController = (function () {
   // which has no access to DejaVuSettings and stays a dumb renderer.
   function columnState() {
     return {
-      lastHero: DejaVuSettings.getOverlayToggle('showLastHero'),
+      // The hero column holds both last-played and most-played, so it has to
+      // exist when either is on — keyed on showLastHero alone, switching that
+      // off silently took the most-played icon with it.
+      lastHero: DejaVuSettings.getOverlayToggle('showLastHero') || DejaVuSettings.getOverlayToggle('showMostPlayedHero'),
       matchKD: DejaVuSettings.getOverlayToggle('showMatchKD'),
       lifetimeKD: DejaVuSettings.getOverlayToggle('showLifetimeKD'),
       record: DejaVuSettings.getOverlayToggle('showRecord')
@@ -374,7 +401,7 @@ var DejaVuOverlayController = (function () {
     var players = Object.keys(rowsByTag).map(function (tag) { return rowsByTag[tag]; });
     players.sort(function (a, b) {
       if (a.is_teammate !== b.is_teammate) return a.is_teammate ? -1 : 1;
-      return a.display_name.localeCompare(b.display_name);
+      return (a.display_name || '').localeCompare(b.display_name || '');
     });
 
     var payload = { players: players, columns: columnState() };

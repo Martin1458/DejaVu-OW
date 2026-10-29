@@ -10,7 +10,7 @@ var DejaVuHeroIcons = (function () {
   var FILENAMES = [
     'Ana_Hero.png', 'Anran_Hero.png', 'Ashe_Hero.png', 'Baptiste_Hero.png',
     'Bastion_Hero.png', 'Brigitte_Hero.png', 'Cassidy_Hero.png', 'Dmon_Hero.png',
-    'Domina_Hero.png', 'Doomfist_Hero.png', 'Dva_Hero.png', 'Echo_Hero.png',
+    'Doctrine_Hero.png', 'Domina_Hero.png', 'Doomfist_Hero.png', 'Dva_Hero.png', 'Echo_Hero.png',
     'Emre_Hero.png', 'Freja_Hero.png', 'Genji_Hero.png', 'Hanzo_Hero.png',
     'Hazard_Hero.png', 'Illari_Hero.png', 'Jetpack_Cat_Hero.png', 'Junker_Queen_Hero.png',
     'Junkrat_Hero.png', 'Juno_Hero.png', 'Kiriko_Hero.png', 'Lifeweaver_Hero.png',

@@ -9,7 +9,7 @@
   var sortDir = -1; // most recent first by default
 
   var rowsEl, statusEl, searchEl, headerCells;
-  var modalBackdrop, modalName, modalTag, modalRecord, modalNotes, modalTags, modalNames, modalStatus;
+  var modalBackdrop, modalName, modalTag, modalRecord, modalMatches, modalNotes, modalTags, modalNames, modalStatus;
   var activeTag = null;
 
   // Separate log file from the background window's (each window is its own JS
@@ -29,7 +29,7 @@
     var el = document.getElementById('hotkey-list');
     var rows = [
       { name: 'toggle_overlay', text: 'show or hide the overlay during a match' },
-      { name: 'open_history', text: 'open this window' }
+      { name: 'open_history', text: 'open or close this window' }
     ];
     DejaVuHotkeys.watch(function (keys) {
       logDiag('hotkeys shown in settings: ' + JSON.stringify(keys));
@@ -48,7 +48,7 @@
   }
 
   function init() {
-    DejaVuFileLog.init();
+    DejaVuFileLog.init('history');
     logDiag('history window init start');
 
     rowsEl = document.getElementById('rows');
@@ -60,6 +60,7 @@
     modalName = document.getElementById('modal-name');
     modalTag = document.getElementById('modal-tag');
     modalRecord = document.getElementById('modal-record');
+    modalMatches = document.getElementById('modal-matches');
     modalNotes = document.getElementById('modal-notes');
     modalTags = document.getElementById('modal-tags');
     modalNames = document.getElementById('modal-names');
@@ -130,8 +131,29 @@
     initTierPicker();
     initOverlayTogglePicker();
     renderHotkeys();
+    initBackups();
+    initRefreshOnFocus();
     logDiag('init complete, current tier = ' + DejaVuSettings.getDetailLevel());
     load();
+  }
+
+  // The background window keeps writing while this one is open, so a window
+  // left open across a match used to show stale data until it was reopened.
+  // Reloads whenever it regains focus — but not while a player is open, where
+  // a reload could replace the record under unsaved notes. Debounced because
+  // a single click into the window can deliver more than one focus event.
+  var REFRESH_DEBOUNCE_MS = 1500;
+  var lastFocusRefresh = 0;
+
+  function initRefreshOnFocus() {
+    window.addEventListener('focus', function () {
+      if (activeTag) return;
+      var now = Date.now();
+      if (now - lastFocusRefresh < REFRESH_DEBOUNCE_MS) return;
+      lastFocusRefresh = now;
+      logDiag('window focused — reloading');
+      load();
+    });
   }
 
   var TIER_HINTS = {
@@ -165,15 +187,15 @@
   var PRESETS = {
     basic: {
       tier: 'basic',
-      toggles: { showRecency: true, showRecord: false, showLastHero: false, showMostPlayedHero: false, showLifetimeKD: false, showMatchKD: false }
+      toggles: { showRecency: true, showNotes: true, showRecord: false, showLastHero: false, showMostPlayedHero: false, showLifetimeKD: false, showMatchKD: false }
     },
     standard: {
       tier: 'standard',
-      toggles: { showRecency: true, showRecord: true, showLastHero: true, showMostPlayedHero: true, showLifetimeKD: false, showMatchKD: false }
+      toggles: { showRecency: true, showNotes: true, showRecord: true, showLastHero: true, showMostPlayedHero: true, showLifetimeKD: false, showMatchKD: false }
     },
     full: {
       tier: 'full',
-      toggles: { showRecency: true, showRecord: true, showLastHero: true, showMostPlayedHero: true, showLifetimeKD: true, showMatchKD: true }
+      toggles: { showRecency: true, showNotes: true, showRecord: true, showLastHero: true, showMostPlayedHero: true, showLifetimeKD: true, showMatchKD: true }
     }
   };
 
@@ -241,6 +263,7 @@
       logDiag('load: resolved with ' + allPlayers.length + ' player(s), ' + Object.keys(allRecords).length + ' record(s)');
       render();
       renderLeaderboards();
+      refreshRestoreOffer();
       logDiag('load: render + renderLeaderboards complete');
     }).catch(function (err) {
       logDiag('load: failed — ' + err);
@@ -302,10 +325,13 @@
   function render() {
     logDiag('render start, ' + allPlayers.length + ' player(s) in memory, sortKey=' + sortKey);
     var query = searchEl.value.trim().toLowerCase();
+    // Notes and tags are searched too, so "toxic" or "duo" finds everyone
+    // you've labelled that way.
     var filtered = allPlayers.filter(function (p) {
       if (!query) return true;
-      return (p.display_name || '').toLowerCase().indexOf(query) !== -1 ||
-        (p.battlenet_tag || '').toLowerCase().indexOf(query) !== -1;
+      return [p.display_name, p.battlenet_tag, p.notes, (p.tags || []).join(' ')].some(function (field) {
+        return typeof field === 'string' && field.toLowerCase().indexOf(query) !== -1;
+      });
     });
 
     filtered.sort(function (a, b) {
@@ -386,15 +412,24 @@
     var now = new Date();
     var filePath = overwolf.io.paths.documents + '\\DejaVu-OW\\exports\\players-' + timestampForFilename(now) + '.json';
 
-    overwolf.io.writeFileContents(
-      filePath,
-      JSON.stringify(allPlayers, null, 2),
-      overwolf.io.enums.eEncoding.UTF8,
-      false,
-      function (result) {
-        statusEl.textContent = result.success ? ('Saved to ' + filePath) : ('Could not save: ' + result.error);
-      }
-    );
+    // A full backup since 0.4.0 (same format as the automatic ones, see
+    // backup.js): the per-match rows travel with the players, so a restore
+    // keeps W/L records and streaks.
+    DejaVuBackup.build().then(function (backup) {
+      logDiag('exportJson: ' + backup.players.length + ' player(s), ' + backup.encounters.length + ' match(es)');
+      overwolf.io.writeFileContents(
+        filePath,
+        JSON.stringify(backup, null, 2),
+        overwolf.io.enums.eEncoding.UTF8,
+        false,
+        function (result) {
+          statusEl.textContent = result.success ? ('Saved to ' + filePath) : ('Could not save: ' + result.error);
+        }
+      );
+    }).catch(function (err) {
+      logDiag('exportJson: failed to read the database: ' + err);
+      statusEl.textContent = 'Could not export: ' + err;
+    });
   }
 
   // Plan §11 G3. Reads the picked file with the DOM File API (not overwolf.io —
@@ -424,21 +459,20 @@
         statusEl.textContent = 'That file is not valid JSON.';
         return;
       }
-      if (!Array.isArray(records)) {
-        logDiag('importJson: ' + file.name + ' is not an array');
+      // Two shapes: a bare players array (every export before 0.4.0), or a
+      // full backup object carrying the per-match rows too.
+      var parsed = DejaVuBackup.parse(records);
+      if (!parsed) {
+        logDiag('importJson: ' + file.name + ' is neither a players array nor a backup');
         statusEl.textContent = 'That does not look like a DejaVu export.';
         return;
       }
 
-      DejaVuStorage.importPlayers(records).then(function (summary) {
+      DejaVuBackup.restore(parsed).then(function (summary) {
         logDiag('importJson: ' + JSON.stringify(summary));
-        // skipped covers records the store refused as unreadable (no usable
-        // battle tag). It used to be counted and then dropped from the
-        // message, which meant a half-unreadable file looked like a clean
-        // import — worth saying out loud now that validation rejects more.
-        var message = 'Added ' + summary.added + ' and updated ' + summary.replaced + '. Kept ' + summary.kept + ' you already had.';
-        if (summary.skipped) message += ' Ignored ' + summary.skipped + ' unreadable entries.';
-        statusEl.textContent = message;
+        statusEl.textContent = restoreMessage(summary);
+        // Whatever was protected for a restore offer is superseded by this.
+        DejaVuBackup.releaseProtection();
         load();
       }).catch(function (err) {
         logDiag('importJson: importPlayers failed: ' + err);
@@ -446,6 +480,79 @@
       });
     };
     reader.readAsText(file);
+  }
+
+  // skipped covers records the store refused as unreadable (no usable battle
+  // tag). It used to be counted and then dropped from the message, which
+  // meant a half-unreadable file looked like a clean import — worth saying
+  // out loud now that validation rejects more.
+  function restoreMessage(summary) {
+    var message = 'Added ' + summary.added + ' and updated ' + summary.replaced + '. Kept ' + summary.kept + ' you already had.';
+    if (summary.matches) {
+      message += ' Restored ' + summary.matches + ' match' + (summary.matches === 1 ? '' : 'es') + '.';
+    }
+    if (summary.skipped) message += ' Ignored ' + summary.skipped + ' unreadable entries.';
+    return message;
+  }
+
+  // Backups section in Settings, plus the restore offer shown over an empty
+  // history (see backup.js for when the background writes them).
+  function initBackups() {
+    var statusEl = document.getElementById('backup-status');
+    document.getElementById('backup-open').addEventListener('click', DejaVuBackup.openFolder);
+    document.getElementById('backup-now').addEventListener('click', function () {
+      statusEl.textContent = 'Backing up...';
+      DejaVuBackup.writeNow('manual', function (result) {
+        statusEl.textContent = result ? backupLine(result) : 'Nothing to back up yet.';
+      });
+    });
+    DejaVuBackup.findLatest(function (latest) {
+      statusEl.textContent = latest ? backupLine(latest) :
+        'No backup yet. One is saved after every match.';
+    });
+
+    document.getElementById('restore-yes').addEventListener('click', restoreFromOffer);
+    document.getElementById('restore-no').addEventListener('click', function () {
+      DejaVuBackup.releaseProtection();
+      document.getElementById('restore-offer').classList.add('hidden');
+      logDiag('restore offer dismissed, starting fresh');
+    });
+  }
+
+  function backupLine(backup) {
+    return 'Last backup: ' + formatDate(Date.parse(backup.at)) + ', ' + backup.players + ' players.';
+  }
+
+  var restoreOffer = null;
+
+  // Only ever offered over an empty history — DejaVuBackup.findRestoreOffer
+  // checks that itself, so this is safe to call on every load.
+  function refreshRestoreOffer() {
+    DejaVuBackup.findRestoreOffer(function (backup) {
+      restoreOffer = backup;
+      var el = document.getElementById('restore-offer');
+      if (!backup) { el.classList.add('hidden'); return; }
+      document.getElementById('restore-text').textContent =
+        'Your history is empty, but there is a backup from ' + formatDate(Date.parse(backup.at)) +
+        ' with ' + backup.players + ' players and ' + backup.matches + ' matches.';
+      el.classList.remove('hidden');
+    });
+  }
+
+  function restoreFromOffer() {
+    if (!restoreOffer) return;
+    var textEl = document.getElementById('restore-text');
+    textEl.textContent = 'Restoring...';
+    DejaVuBackup.restore(restoreOffer.data).then(function (summary) {
+      logDiag('restore from ' + restoreOffer.path + ': ' + JSON.stringify(summary));
+      DejaVuBackup.releaseProtection();
+      document.getElementById('restore-offer').classList.add('hidden');
+      document.getElementById('import-status').textContent = restoreMessage(summary);
+      load();
+    }).catch(function (err) {
+      logDiag('restore failed: ' + err);
+      textEl.textContent = 'Could not restore: ' + err;
+    });
   }
 
   function clearHistory() {
@@ -486,6 +593,86 @@
     }).catch(function (err) {
       logDiag('openModal: getRecordAgainst failed for ' + tag + ': ' + err);
       modalRecord.textContent = 'Could not load: ' + err;
+    });
+
+    modalMatches.textContent = 'Loading...';
+    DejaVuStorage.getMatchesWithPlayer(tag, RECENT_MATCHES_SHOWN).then(function (matches) {
+      if (activeTag !== tag) return; // another player was opened meanwhile
+      renderMatches(matches);
+    }).catch(function (err) {
+      logDiag('openModal: getMatchesWithPlayer failed for ' + tag + ': ' + err);
+      modalMatches.textContent = 'Could not load: ' + err;
+    });
+  }
+
+  var RECENT_MATCHES_SHOWN = 10;
+
+  var RESULT_LABELS = {
+    victory: { text: 'W', title: 'Won' },
+    defeat: { text: 'L', title: 'Lost' },
+    draw: { text: 'D', title: 'Draw' }
+  };
+
+  // Plan §11 B1: one line per shared match. These rows have been written since
+  // Standard tier existed, but nothing showed them until now. Built as nodes,
+  // since hero names come from GEP and an imported backup.
+  function renderMatches(matches) {
+    modalMatches.textContent = '';
+    if (!matches.length) {
+      var empty = document.createElement('div');
+      empty.className = 'leaderboard-empty';
+      empty.textContent = 'No matches on record yet (needs Standard or Full).';
+      modalMatches.appendChild(empty);
+      return;
+    }
+
+    matches.forEach(function (m) {
+      var row = document.createElement('div');
+      row.className = 'match-row';
+
+      var label = RESULT_LABELS[m.result];
+      var result = document.createElement('span');
+      result.className = 'match-result ' + (label ? m.result : 'unknown');
+      result.textContent = label ? label.text : '?';
+      result.title = label ? label.title : 'No result recorded';
+      row.appendChild(result);
+
+      var heroPath = DejaVuHeroIcons.resolve(m.hero_name);
+      var hero;
+      if (heroPath) {
+        hero = document.createElement('img');
+        hero.src = heroPath;
+        hero.alt = m.hero_name;
+        hero.title = m.hero_name;
+      } else {
+        hero = document.createElement('span');
+        hero.className = 'match-hero-empty';
+      }
+      row.appendChild(hero);
+
+      var date = document.createElement('span');
+      date.className = 'match-date';
+      date.textContent = formatDate(m.timestamp);
+      row.appendChild(date);
+
+      var side = document.createElement('span');
+      if (m.was_teammate === true || m.was_teammate === false) {
+        side.className = 'match-side ' + (m.was_teammate ? 'with' : 'against');
+        side.textContent = m.was_teammate ? 'With you' : 'Against you';
+      } else {
+        side.className = 'match-side';
+      }
+      row.appendChild(side);
+
+      if (m.kills || m.deaths) {
+        var kd = document.createElement('span');
+        kd.className = 'match-kd';
+        kd.textContent = 'K/D ' + m.kills + '/' + m.deaths;
+        kd.title = 'You killed them ' + m.kills + ', they killed you ' + m.deaths;
+        row.appendChild(kd);
+      }
+
+      modalMatches.appendChild(row);
     });
   }
 
