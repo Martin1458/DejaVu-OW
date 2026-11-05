@@ -82,7 +82,9 @@
       gap: 6px;
       white-space: nowrap;
     }
+    #collapsed-logo[src="../../icons/pasik-icon.png"] { transform: scale(1.1); }
     #collapsed-logo {
+      object-fit: contain;
       width: 22px;
       height: 22px;
       /* Nothing behind the badge now, so the artwork needs its own edge
@@ -400,6 +402,8 @@
     <div id="footnote">DejaVu counts this match, so 1 means your first time together. K/D columns are <span class="kd-num kd-you">your kills</span>/<span class="kd-num kd-them">your deaths</span>. Choose what shows here in Settings (<span id="history-key">Alt+H</span>).</div>
   </div>
   <script src="../common/hotkeys.js"></script>
+  <script src="../common/supporter-config.js"></script>
+  <script src="../common/supporter.js"></script>
   <script src="../background/settings.js"></script>
   <script src="hero-icons.js"></script>
   <script src="overlay.js"></script>

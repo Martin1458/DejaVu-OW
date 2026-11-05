@@ -61,6 +61,7 @@ var DejaVuMatchSession = (function () {
   var fullRecordCache = {};   // battlenet_tag -> getRecordAgainst() summary (or null), cached per match
   var matchesAgoCache = {};   // battlenet_tag -> matches-since-last-seen (or null), cached per match
   var lastSideCache = {};     // battlenet_tag -> was_teammate last time you met (or null), cached per match
+  var lastEncounterCache = {}; // battlenet_tag -> getLastEncounter() (or null), cached per match — carries the mode
   var matchStatsByTag = {};   // battlenet_tag -> { kills, deaths } against them, this match only
   var lastLivePlayerByTag = {}; // battlenet_tag -> most recent live roster entry, for out-of-band re-emits
   var lastKnownHeroByTag = {}; // battlenet_tag -> hero_name last seen them on, this match only (for swap detection)
@@ -71,6 +72,13 @@ var DejaVuMatchSession = (function () {
   var currentEncounterId = null;
   var currentMatchNumber = null; // DejaVuSettings' running match counter, as of this match (plan §11, recency)
   var knownMatchInfo = {}; // last known-good match_info fields this match
+  // Game mode fields (see common/game-modes.js), deliberately NOT reset per
+  // match: GEP sends them during the loading screen, often before
+  // match_start, and only again when they change — so the last value seen is
+  // the current match's, and is copied onto each new encounters row.
+  var MODE_FIELDS = ['game_type', 'game_queue_type', 'game_mode'];
+  var lastModeInfo = {};
+  var modeLocked = false; // set at match_end, see handleMatchInfo
   var localTag = null;     // the local player's own battlenet_tag this match
   var nameToTag = {};      // player_name -> battlenet_tag, rebuilt from the full roster each update
 
@@ -91,6 +99,8 @@ var DejaVuMatchSession = (function () {
     fullRecordCache = {};
     matchesAgoCache = {};
     lastSideCache = {};
+    lastEncounterCache = {};
+    modeLocked = false;
     matchStatsByTag = {};
     lastLivePlayerByTag = {};
     lastKnownHeroByTag = {};
@@ -109,7 +119,13 @@ var DejaVuMatchSession = (function () {
 
     if (currentTier !== 'basic') {
       currentEncounterId = Date.now() + '-' + Math.random().toString(36).slice(2, 8);
-      DejaVuStorage.createEncounter(currentEncounterId, Date.now()).catch(function (err) {
+      var extra = { match_number: currentMatchNumber };
+      MODE_FIELDS.forEach(function (key) {
+        if (lastModeInfo[key] != null) extra[key] = lastModeInfo[key];
+        knownMatchInfo[key] = lastModeInfo[key];
+      });
+      logMode('at match_start');
+      DejaVuStorage.createEncounter(currentEncounterId, Date.now(), extra).catch(function (err) {
         logDiag('failed to create encounter row: ' + err);
       });
     }
@@ -117,9 +133,24 @@ var DejaVuMatchSession = (function () {
     if (handlers.onMatchReset) handlers.onMatchReset();
   }
 
+  // Rare (a few times a match) and the only record of what GEP really calls
+  // each mode — the pre-game deathmatch's game_type wasn't known when this
+  // was written, so it's logged where it survives a long session.
+  function logMode(when) {
+    var key = DejaVuGameModes.classify(lastModeInfo);
+    var line = '[match-session] match mode ' + when + ': game_type=' + (lastModeInfo.game_type || 'none') +
+      ' game_mode=' + (lastModeInfo.game_mode != null ? lastModeInfo.game_mode : 'none') +
+      ' queue=' + (lastModeInfo.game_queue_type || 'none') + ' -> ' + key;
+    console.log(line);
+    if (window.DejaVuFileLog) DejaVuFileLog.logImportant(line);
+  }
+
   function handleMatchEvent(name, data) {
     if (name === 'match_start') {
       resetMatch();
+    }
+    if (name === 'match_end') {
+      modeLocked = true;
     }
     if (name === 'kill_feed') {
       handleKillFeed(data);
@@ -181,7 +212,7 @@ var DejaVuMatchSession = (function () {
     if (player && priorRecordCache.hasOwnProperty(tag)) {
       emitRecognized(player, priorRecordCache[tag], lastResultCache[tag] || null,
         lastHeroCache[tag] || null, matchStatsByTag[tag], fullRecordCache[tag] || null,
-        matchesAgoCache[tag], lastSideCache[tag]);
+        matchesAgoCache[tag], lastSideCache[tag], lastEncounterCache[tag]);
     }
   }
 
@@ -197,6 +228,17 @@ var DejaVuMatchSession = (function () {
       if (handlers.onMatchResult) handlers.onMatchResult(fields.match_outcome);
     }
 
+    if (fields) {
+      var modeChanged = false;
+      MODE_FIELDS.forEach(function (key) {
+        var value = fields[key];
+        if (value === null || value === undefined || value === '' || lastModeInfo[key] === value) return;
+        lastModeInfo[key] = value;
+        modeChanged = true;
+      });
+      if (modeChanged) logMode('update');
+    }
+
     if (currentTier === 'basic' || !currentEncounterId || !fields) return;
 
     // GEP's own field is called match_outcome; the `encounters` row's field is
@@ -210,6 +252,11 @@ var DejaVuMatchSession = (function () {
       var value = fields[key];
       if (value === null || value === undefined || value === '') return;
       if (knownMatchInfo[key] === value) return;
+      // After match_end, mode fields belong to the next match's loading
+      // screen, while this match's row is still the current one (it stays
+      // current until match_start), so they mustn't overwrite it. Before
+      // that they may correct the value copied in at match_start.
+      if (MODE_FIELDS.indexOf(key) !== -1 && modeLocked) return;
       knownMatchInfo[key] = value;
       var storageKey = key === 'match_outcome' ? 'result' : key;
       updates[storageKey] = value;
@@ -222,11 +269,11 @@ var DejaVuMatchSession = (function () {
     }
   }
 
-  function emitRecognized(player, priorRecord, lastResult, lastHero, matchStats, fullRecord, matchesAgo, lastSide) {
+  function emitRecognized(player, priorRecord, lastResult, lastHero, matchStats, fullRecord, matchesAgo, lastSide, lastEncounter) {
     if (handlers.onPlayerRecognized) {
       handlers.onPlayerRecognized(player, priorRecord, lastResult, lastHero,
         matchStats || { kills: 0, deaths: 0 }, fullRecord || null, matchesAgo != null ? matchesAgo : null,
-        lastSide === true || lastSide === false ? lastSide : null);
+        lastSide === true || lastSide === false ? lastSide : null, lastEncounter || null);
     }
   }
 
@@ -330,7 +377,7 @@ var DejaVuMatchSession = (function () {
         trackHeroPick(tag, player.hero_name);
         emitRecognized(player, priorRecordCache[tag], lastResultCache[tag] || null,
           lastHeroCache[tag] || null, matchStatsByTag[tag], fullRecordCache[tag] || null,
-          matchesAgoCache[tag], lastSideCache[tag]);
+          matchesAgoCache[tag], lastSideCache[tag], lastEncounterCache[tag]);
         return;
       }
 
@@ -339,9 +386,13 @@ var DejaVuMatchSession = (function () {
         DejaVuStorage.getLastResult(tag),
         DejaVuStorage.getLastHero(tag),
         DejaVuStorage.getRecordAgainst(tag),
-        DejaVuStorage.getLastEncounter(tag)
+        DejaVuStorage.getLastEncounter(tag),
+        DejaVuStorage.getExcludedTotals(tag)
       ]).then(function (results) {
-        var priorRecord = results[0] || null;
+        // Excluded game modes (Settings) taken back out of the running totals,
+        // so times-together, K/D and most-played hero all skip them from here.
+        var priorRecord = DejaVuGameModes.applyExclusions(results[0] || null, results[5]);
+        if (priorRecord && priorRecord.only_excluded) priorRecord = null;
         var lastResult = results[1] || null;
         var lastHero = results[2] || null;
         var fullRecord = results[3] || null;
@@ -366,6 +417,18 @@ var DejaVuMatchSession = (function () {
         // 2026-09-11 and 2026-09-13).
         var matchesAgo = (currentMatchNumber != null && priorRecord && priorRecord.last_seen_match_number != null) ?
           (currentMatchNumber - priorRecord.last_seen_match_number) : null;
+        // With per-match rows available, count counted matches since the last
+        // counted one together instead — the plain counter above includes
+        // every mode, so an excluded pre-game deathmatch would still count.
+        if (!lastEncounter) return [priorRecord, lastResult, lastHero, fullRecord, lastEncounter, lastSide, matchesAgo];
+        return DejaVuStorage.countCountedEncountersSince(lastEncounter.timestamp, currentEncounterId).then(function (since) {
+          return [priorRecord, lastResult, lastHero, fullRecord, lastEncounter, lastSide, since + 1];
+        }, function () {
+          return [priorRecord, lastResult, lastHero, fullRecord, lastEncounter, lastSide, matchesAgo];
+        });
+      }).then(function (resolved) {
+        var priorRecord = resolved[0], lastResult = resolved[1], lastHero = resolved[2], fullRecord = resolved[3];
+        var lastEncounter = resolved[4], lastSide = resolved[5], matchesAgo = resolved[6];
 
         priorRecordCache[tag] = priorRecord;
         lastResultCache[tag] = lastResult;
@@ -373,6 +436,7 @@ var DejaVuMatchSession = (function () {
         fullRecordCache[tag] = fullRecord;
         matchesAgoCache[tag] = matchesAgo;
         lastSideCache[tag] = lastSide;
+        lastEncounterCache[tag] = lastEncounter;
         // One-time-per-tag-per-match summary of what history the overlay row
         // will actually have to show — cheap (fires once per new player per
         // match, not per re-emit) and exactly the data needed to tell "no
@@ -385,7 +449,8 @@ var DejaVuMatchSession = (function () {
           ' lastHero=' + (lastHero || 'none') +
           ' fullRecord=' + (fullRecord ? JSON.stringify(fullRecord) : 'none') +
           ' matchesAgo=' + (matchesAgo != null ? matchesAgo : 'none') +
-          ' lastSide=' + (lastSide === null ? 'none' : (lastSide ? 'teammate' : 'enemy'));
+          ' lastSide=' + (lastSide === null ? 'none' : (lastSide ? 'teammate' : 'enemy')) +
+          ' lastMode=' + (lastEncounter ? lastEncounter.mode : 'none');
         logDiag(recognizedLine);
         if (window.DejaVuFileLog) DejaVuFileLog.logImportant('[match-session] ' + recognizedLine);
 
@@ -412,7 +477,7 @@ var DejaVuMatchSession = (function () {
         trackHeroPick(tag, player.hero_name);
 
         try {
-          emitRecognized(player, priorRecord, lastResult, lastHero, matchStatsByTag[tag], fullRecord, matchesAgo, lastSide);
+          emitRecognized(player, priorRecord, lastResult, lastHero, matchStatsByTag[tag], fullRecord, matchesAgo, lastSide, lastEncounter);
         } catch (err) {
           logDiag('overlay update failed for ' + tag + ' (sighting still saved): ' + err);
         }

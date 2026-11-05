@@ -209,7 +209,7 @@ var DejaVuOverlayController = (function () {
   // differ. lastResult is accepted for positional consistency with
   // match-session.js's callback but no longer used here — see the showRecord
   // block below for why.
-  function handlePlayerRecognized(livePlayer, priorRecord, lastResult, lastHero, matchStats, fullRecord, matchesAgo, lastSide) {
+  function handlePlayerRecognized(livePlayer, priorRecord, lastResult, lastHero, matchStats, fullRecord, matchesAgo, lastSide, lastEncounter) {
     var tag = livePlayer.battlenet_tag;
 
     var row = {
@@ -302,9 +302,15 @@ var DejaVuOverlayController = (function () {
     // "N matches ago" / "X days ago" (plan §11, 2026-09-06) — recency doesn't
     // need any particular tier (priorRecord.last_seen exists at every tier;
     // matchesAgo is null when unknown), unlike everything else in this
-    // function. Nothing to show on someone's first-ever sighting.
+    // function. Nothing to show on someone's first-ever sighting. With a
+    // per-match row (Standard+), time and mode come from the last *counted*
+    // match together, so an excluded game mode never shows up as "last time".
     if (DejaVuSettings.getOverlayToggle('showRecency') && priorRecord) {
-      row.recency = { matchesAgo: matchesAgo, lastSeen: priorRecord.last_seen || null };
+      row.recency = {
+        matchesAgo: matchesAgo,
+        lastSeen: (lastEncounter && lastEncounter.timestamp) || priorRecord.last_seen || null,
+        mode: lastEncounter ? DejaVuGameModes.shortLabel(lastEncounter.mode) : ''
+      };
     }
 
     // Most-played hero overall (plan §11 C3) — distinct from last_hero above:

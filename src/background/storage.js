@@ -185,16 +185,20 @@ var DejaVuStorage = (function () {
   // match_start rather than match_end for the same reason recordEncounter fires
   // per-sighting instead of buffering — match_end/game_exit aren't guaranteed
   // to fire, so a match with no finalize step should still leave a usable row.
-  function createEncounter(encounterId, timestamp) {
+  // `extra` carries fields already known at creation — the match counter, and
+  // any game mode fields GEP sent during the loading screen, before match_start.
+  function createEncounter(encounterId, timestamp, extra) {
     return open().then(function (db) {
       return new Promise(function (resolve, reject) {
         var tx = db.transaction('encounters', 'readwrite');
-        tx.objectStore('encounters').put({
+        var row = {
           encounter_id: encounterId,
           timestamp: timestamp,
           result: null,
           map: null
-        });
+        };
+        Object.keys(extra || {}).forEach(function (key) { row[key] = extra[key]; });
+        tx.objectStore('encounters').put(row);
         tx.oncomplete = function () { resolve(); };
         tx.onerror = function () { reject(tx.error); };
       });
@@ -273,6 +277,11 @@ var DejaVuStorage = (function () {
           if (cursor.value.battlenet_tag === tag) {
             var row = cursor.value;
             row.hero_name = hero;
+            // Per-match pick tally mirroring the player row's hero_counts
+            // (bumpHeroPick is called on the same signal), so an excluded game
+            // mode's picks can be subtracted back out of it — see game-modes.js.
+            if (!row.hero_picks) row.hero_picks = {};
+            row.hero_picks[hero] = (row.hero_picks[hero] || 0) + 1;
             cursor.update(row);
           } else {
             cursor.continue();
@@ -312,12 +321,13 @@ var DejaVuStorage = (function () {
           var store = db.transaction('encounters', 'readonly').objectStore('encounters');
           var best = null;
           var pending = participantRows.length;
+          var excluded = DejaVuGameModes.excludedModes();
 
           participantRows.forEach(function (p) {
             var req = store.get(p.encounter_id);
             req.onsuccess = function () {
               var enc = req.result;
-              if (enc && enc.result && (!best || enc.timestamp > best.timestamp)) {
+              if (enc && enc.result && DejaVuGameModes.isCounted(enc, excluded) && (!best || enc.timestamp > best.timestamp)) {
                 best = { encounter_id: enc.encounter_id, result: enc.result, timestamp: enc.timestamp, was_teammate: p.was_teammate };
               }
               pending -= 1;
@@ -431,12 +441,13 @@ var DejaVuStorage = (function () {
           var store = db.transaction('encounters', 'readonly').objectStore('encounters');
           var best = null;
           var pending = withHero.length;
+          var excluded = DejaVuGameModes.excludedModes();
 
           withHero.forEach(function (p) {
             var req = store.get(p.encounter_id);
             req.onsuccess = function () {
               var enc = req.result;
-              if (enc && (!best || enc.timestamp > best.timestamp)) {
+              if (enc && DejaVuGameModes.isCounted(enc, excluded) && (!best || enc.timestamp > best.timestamp)) {
                 best = { hero_name: p.hero_name, timestamp: enc.timestamp };
               }
               pending -= 1;
@@ -469,17 +480,19 @@ var DejaVuStorage = (function () {
           var store = db.transaction('encounters', 'readonly').objectStore('encounters');
           var best = null;
           var pending = participantRows.length;
+          var excluded = DejaVuGameModes.excludedModes();
 
           participantRows.forEach(function (p) {
             var req = store.get(p.encounter_id);
             req.onsuccess = function () {
               var enc = req.result;
-              if (enc && (!best || enc.timestamp > best.timestamp)) {
+              if (enc && DejaVuGameModes.isCounted(enc, excluded) && (!best || enc.timestamp > best.timestamp)) {
                 best = {
                   encounter_id: enc.encounter_id,
                   timestamp: enc.timestamp,
                   was_teammate: p.was_teammate,
-                  hero_name: realHeroName(p.hero_name)
+                  hero_name: realHeroName(p.hero_name),
+                  mode: DejaVuGameModes.classify(enc)
                 };
               }
               pending -= 1;
@@ -529,7 +542,9 @@ var DejaVuStorage = (function () {
                   was_teammate: p.was_teammate,
                   hero_name: realHeroName(p.hero_name),
                   kills: p.kills || 0,
-                  deaths: p.deaths || 0
+                  deaths: p.deaths || 0,
+                  mode: DejaVuGameModes.classify(enc),
+                  counted: DejaVuGameModes.isCounted(enc)
                 });
               }
               done();
@@ -587,12 +602,13 @@ var DejaVuStorage = (function () {
           var store = db.transaction('encounters', 'readonly').objectStore('encounters');
           var completed = [];
           var pending = participantRows.length;
+          var excluded = DejaVuGameModes.excludedModes();
 
           participantRows.forEach(function (p) {
             var req = store.get(p.encounter_id);
             req.onsuccess = function () {
               var enc = req.result;
-              if (enc && enc.result) {
+              if (enc && enc.result && DejaVuGameModes.isCounted(enc, excluded)) {
                 completed.push({ result: enc.result, timestamp: enc.timestamp, was_teammate: p.was_teammate });
               }
               pending -= 1;
@@ -630,9 +646,10 @@ var DejaVuStorage = (function () {
 
         tx.oncomplete = function () {
           var completedByTag = {};
+          var excluded = DejaVuGameModes.excludedModes();
           participants.forEach(function (p) {
             var enc = encounters[p.encounter_id];
-            if (!enc || !enc.result) return;
+            if (!enc || !enc.result || !DejaVuGameModes.isCounted(enc, excluded)) return;
             if (!completedByTag[p.battlenet_tag]) completedByTag[p.battlenet_tag] = [];
             completedByTag[p.battlenet_tag].push({ result: enc.result, timestamp: enc.timestamp, was_teammate: p.was_teammate });
           });
@@ -645,6 +662,93 @@ var DejaVuStorage = (function () {
           resolve(byTag);
         };
         tx.onerror = function () { reject(tx.error); };
+      });
+    });
+  }
+
+  // What to take back out of one player's running totals for game modes the
+  // user excluded (see DejaVuGameModes.applyExclusions). Totals on the
+  // `players` row are bumped live, before a match's mode is even known, so
+  // they always include every mode; this is the per-match side of the ledger.
+  function getExcludedTotals(tag) {
+    return getParticipantsForPlayer(tag).then(function (participantRows) {
+      var totals = DejaVuGameModes.emptyTotals();
+      if (!participantRows.length) return totals;
+
+      return open().then(function (db) {
+        return new Promise(function (resolve) {
+          var store = db.transaction('encounters', 'readonly').objectStore('encounters');
+          var pending = participantRows.length;
+          var excluded = DejaVuGameModes.excludedModes();
+
+          function done() {
+            pending -= 1;
+            if (pending === 0) resolve(totals);
+          }
+
+          participantRows.forEach(function (p) {
+            var req = store.get(p.encounter_id);
+            req.onsuccess = function () {
+              var enc = req.result;
+              if (enc) DejaVuGameModes.addToTotals(totals, p, enc, DejaVuGameModes.isCounted(enc, excluded));
+              done();
+            };
+            req.onerror = done;
+          });
+        });
+      });
+    });
+  }
+
+  // getExcludedTotals for every player in one pass — for the History Browser
+  // table, same reasoning as getAllRecords. A tag with no participant rows
+  // isn't a key in the result.
+  function getAllExcludedTotals() {
+    return open().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction(['encounters', 'encounter_participants'], 'readonly');
+        var encounters = {};
+        var participants = [];
+
+        tx.objectStore('encounters').getAll().onsuccess = function (event) {
+          event.target.result.forEach(function (enc) { encounters[enc.encounter_id] = enc; });
+        };
+        tx.objectStore('encounter_participants').getAll().onsuccess = function (event) {
+          participants = event.target.result;
+        };
+
+        tx.oncomplete = function () {
+          var byTag = {};
+          var excluded = DejaVuGameModes.excludedModes();
+          participants.forEach(function (p) {
+            var enc = encounters[p.encounter_id];
+            if (!enc) return;
+            if (!byTag[p.battlenet_tag]) byTag[p.battlenet_tag] = DejaVuGameModes.emptyTotals();
+            DejaVuGameModes.addToTotals(byTag[p.battlenet_tag], p, enc, DejaVuGameModes.isCounted(enc, excluded));
+          });
+          resolve(byTag);
+        };
+        tx.onerror = function () { reject(tx.error); };
+      });
+    });
+  }
+
+  // How many counted matches you've played after `timestamp`, not counting
+  // the match in progress — "N matches ago" with excluded modes skipped, so a
+  // pre-game deathmatch doesn't push everyone one match further back.
+  function countCountedEncountersSince(timestamp, excludeEncounterId) {
+    return open().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var store = db.transaction('encounters', 'readonly').objectStore('encounters');
+        var req = store.getAll();
+        req.onsuccess = function () {
+          var excluded = DejaVuGameModes.excludedModes();
+          resolve(req.result.filter(function (enc) {
+            return enc.timestamp > timestamp && enc.encounter_id !== excludeEncounterId &&
+              DejaVuGameModes.isCounted(enc, excluded);
+          }).length);
+        };
+        req.onerror = function () { reject(req.error); };
       });
     });
   }
@@ -848,7 +952,11 @@ var DejaVuStorage = (function () {
       encounter_id: id,
       timestamp: timestamp,
       result: VALID_RESULTS.indexOf(incoming.result) !== -1 ? incoming.result : null,
-      map: asText(incoming.map)
+      map: asText(incoming.map),
+      game_type: asText(incoming.game_type),
+      game_queue_type: asText(incoming.game_queue_type),
+      game_mode: asText(incoming.game_mode),
+      match_number: asCount(incoming.match_number) || null
     };
   }
 
@@ -867,6 +975,12 @@ var DejaVuStorage = (function () {
     if (typeof incoming.was_teammate === 'boolean') row.was_teammate = incoming.was_teammate;
     if (asCount(incoming.kills)) row.kills = asCount(incoming.kills);
     if (asCount(incoming.deaths)) row.deaths = asCount(incoming.deaths);
+    if (incoming.hero_picks && typeof incoming.hero_picks === 'object') {
+      row.hero_picks = {};
+      Object.keys(incoming.hero_picks).forEach(function (hero) {
+        if (asCount(incoming.hero_picks[hero])) row.hero_picks[hero] = asCount(incoming.hero_picks[hero]);
+      });
+    }
     return row;
   }
 
@@ -941,6 +1055,9 @@ var DejaVuStorage = (function () {
     getRecordAgainst: getRecordAgainst,
     getAllRecords: getAllRecords,
     getMatchesWithPlayer: getMatchesWithPlayer,
+    getExcludedTotals: getExcludedTotals,
+    getAllExcludedTotals: getAllExcludedTotals,
+    countCountedEncountersSince: countCountedEncountersSince,
     getBackupData: getBackupData,
     importPlayers: importPlayers,
     importMatchHistory: importMatchHistory,

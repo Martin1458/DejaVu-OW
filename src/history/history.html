@@ -366,6 +366,8 @@
     .match-side.with { color: #7ee787; }
     .match-side.against { color: #ff8a8a; }
     .match-kd { opacity: 0.8; }
+    .match-mode { opacity: 0.7; width: 90px; flex: none; }
+    .match-row.not-counted { opacity: 0.45; }
     /* Same pill colours as the overlay's W/L badges. */
     .match-result {
       display: inline-block;
@@ -385,6 +387,11 @@
       opacity: 0.65;
       min-height: 14px;
     }
+    #supporter-testing[hidden] { display: none; }
+    .supporter-previews { display: flex; gap: 28px; margin: 12px 0; }
+    .supporter-badge { display: inline-flex; align-items: center; gap: 8px; }
+    .supporter-badge img[src="../../icons/pasik-icon.png"] { transform: scale(1.1); }
+    .supporter-badge img { width: 22px; height: 22px; object-fit: contain; }
   </style>
 </head>
 <body>
@@ -541,6 +548,27 @@
       </div>
 
       <div class="modal-section">
+        <h3>Game modes counted in stats</h3>
+        <div class="hint" style="margin-top: 0; margin-bottom: 6px;">Unticked modes are still saved, they just don't count toward games together, W/L, K/D, heroes or "last time". Tick them again to bring them back. Matches from before this setting existed always count.</div>
+        <div id="mode-filter"></div>
+      </div>
+
+      <div class="modal-section">
+        <h3>Support the developer</h3>
+        <div class="hint">A little thank-you for supporting DejaVu: a Pasik icon for your small overlay badge.</div>
+        <div class="supporter-previews">
+          <div><span class="supporter-badge"><img src="../../icons/IconMouseOver.png" alt="DejaVu"><span data-badge-hotkey>Alt+J</span></span><div class="hint">Regular</div></div>
+          <div><span class="supporter-badge"><img src="../../icons/pasik-icon.png" alt="Pasik"><span data-badge-hotkey>Alt+J</span></span><div class="hint">Supporter</div></div>
+        </div>
+        <div id="supporter-status" class="hint" role="status" aria-live="polite"></div>
+        <button id="supporter-login" hidden>Sign in to Overwolf</button>
+        <button id="supporter-buy" disabled>Support the developer</button>
+        <button id="supporter-refresh">Refresh purchases</button>
+        <div class="tier-row"><label><input type="checkbox" id="supporter-use-icon" disabled> Use Pasik icon</label></div>
+        <div id="supporter-testing" class="tier-row"><label><input type="checkbox" id="supporter-preview"> Preview supporter icon (testing)</label></div>
+        <div class="hint">Integration revision 3: Pasik +10%. Purchase setup is in progress; testing preview remains available until sales are enabled.</div>
+      </div>
+      <div class="modal-section">
         <h3>Overlay position</h3>
         <div class="tier-row">
           <label><input type="checkbox" id="overlay-movable"> Let me drag the overlay in game</label>
@@ -568,7 +596,10 @@
   <script src="../common/hotkeys.js"></script>
   <script src="../background/window-utils.js"></script>
   <script src="../background/file-logger.js"></script>
+  <script src="../common/game-modes.js"></script>
   <script src="../background/storage.js"></script>
+  <script src="../common/supporter-config.js"></script>
+  <script src="../common/supporter.js"></script>
   <script src="../background/settings.js"></script>
   <script src="../background/backup.js"></script>
   <script src="../overlay/hero-icons.js"></script>

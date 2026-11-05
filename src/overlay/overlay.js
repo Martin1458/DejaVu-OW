@@ -36,6 +36,10 @@
     // Read once up front so the cursor is right before the first display-mode
     // message arrives; settings.js shares localStorage across every window.
     setMovable(DejaVuSettings.isOverlayMovable());
+    DejaVuSupporter.watch(applyBadgeIcon);
+    DejaVuSupporter.start();
+    applyBadgeIcon();
+    window.addEventListener('storage', applyBadgeIcon);
     initDragging();
     overwolf.windows.onMessageReceived.addListener(handleMessage);
     applyLiveHotkeys();
@@ -63,7 +67,24 @@
     });
   }
 
+  function applyBadgeIcon() {
+    var logo = document.getElementById('collapsed-logo');
+    var pasik = DejaVuSettings.getBadgeIcon() === 'pasik';
+    var source = pasik ? '../../icons/pasik-icon.png' : '../../icons/IconMouseOver.png';
+    if (logo.getAttribute('src') === source) return;
+    logo.onerror = function () {
+      // Clear before assigning the fallback so a missing default cannot loop.
+      logo.onerror = null;
+      logo.alt = 'DejaVu';
+      logo.src = '../../icons/IconMouseOver.png';
+    };
+    logo.alt = pasik ? 'DejaVu supporter: Pasik' : 'DejaVu';
+    logo.src = source;
+  }
+
   function handleMessage(message) {
+    if (message.id === 'badge-icon-changed') applyBadgeIcon();
+    if (message.id === 'supporter-refresh') DejaVuSupporter.refresh();
     if (message.id === 'players-update') {
       columns = message.content.columns || ALL_COLUMNS;
       render(message.content.players || []);
@@ -218,7 +239,9 @@
     }
     var relative = formatRelativeTime(recency.lastSeen);
     if (relative) parts.push(relative);
-    return parts.length ? parts.join(', ') : null;
+    if (!parts.length) return null;
+    // Game mode of that last match, when known — "3 matches ago, 2d ago · QP".
+    return parts.join(', ') + (recency.mode ? ' · ' + recency.mode : '');
   }
 
   function renderMatchResult(result) {

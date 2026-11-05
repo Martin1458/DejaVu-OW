@@ -11,7 +11,7 @@
     "launcher_icon": "icons/launcher_icon.ico",
     "description": "Player history & encounter memory for Overwatch"
   },
-  "permissions": ["FileSystem", "Hotkeys"],
+  "permissions": ["FileSystem", "Hotkeys", "Profile"],
   "data": {
     "start_window": "background",
     "hotkeys": {

@@ -45,6 +45,31 @@ var DejaVuSettings = (function () {
   // any setting below, or by dismissing the popup itself.
   var KEY_SETUP_COMPLETE = 'dejavu.setupComplete';
 
+  // Preview access is deliberately separate from appearance preference.
+  // Phase 2 will replace this access source with verified account ownership.
+  var KEY_SUPPORTER_PREVIEW = 'dejavu.supporter.preview';
+  var KEY_SUPPORTER_ICON = 'dejavu.supporter.usePasik';
+
+  function readSupporterFlag(key) {
+    try { return localStorage.getItem(key) === 'true'; }
+    catch (e) { return false; }
+  }
+
+  function setSupporterFlag(key, value) {
+    try { localStorage.setItem(key, String(!!value)); }
+    catch (e) { console.warn('[DejaVuSettings] supporter setting write failed', e); }
+  }
+
+  function isSupporterPreviewEnabled() { return readSupporterFlag(KEY_SUPPORTER_PREVIEW); }
+  function setSupporterPreviewEnabled(value) { setSupporterFlag(KEY_SUPPORTER_PREVIEW, value); }
+  function isPasikIconPreferred() { return readSupporterFlag(KEY_SUPPORTER_ICON); }
+  function setPasikIconPreferred(value) { setSupporterFlag(KEY_SUPPORTER_ICON, value); }
+  function getBadgeIcon() {
+    var service = typeof DejaVuSupporter !== 'undefined' ? DejaVuSupporter : null;
+    var preview = service && service.previewAllowed() && isSupporterPreviewEnabled();
+    var access = service && service.hasAccess();
+    return (preview || access) && isPasikIconPreferred() ? 'pasik' : 'default';
+  }
   function getDetailLevel() {
     var value = null;
     try {
@@ -85,6 +110,31 @@ var DejaVuSettings = (function () {
     }
     try {
       localStorage.setItem(OVERLAY_TOGGLE_KEYS[key], enabled ? 'true' : 'false');
+    } catch (e) {
+      console.warn('[DejaVuSettings] localStorage write failed', e);
+    }
+    markSetupComplete();
+  }
+
+  // Game modes left out of stats (see common/game-modes.js). One JSON array
+  // rather than a key per mode, since the mode list comes from game-modes.js
+  // and may grow. Empty by default — every mode counts until unticked.
+  var KEY_EXCLUDED_MODES = 'dejavu.modes.excluded';
+
+  function getExcludedModes() {
+    try {
+      var value = JSON.parse(localStorage.getItem(KEY_EXCLUDED_MODES));
+      return Array.isArray(value) ? value : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function setModeCounted(key, counted) {
+    var excluded = getExcludedModes().filter(function (k) { return k !== key; });
+    if (!counted) excluded.push(key);
+    try {
+      localStorage.setItem(KEY_EXCLUDED_MODES, JSON.stringify(excluded));
     } catch (e) {
       console.warn('[DejaVuSettings] localStorage write failed', e);
     }
@@ -199,8 +249,15 @@ var DejaVuSettings = (function () {
   }
 
   return {
+    isSupporterPreviewEnabled: isSupporterPreviewEnabled,
+    setSupporterPreviewEnabled: setSupporterPreviewEnabled,
+    isPasikIconPreferred: isPasikIconPreferred,
+    setPasikIconPreferred: setPasikIconPreferred,
+    getBadgeIcon: getBadgeIcon,
     VALID_LEVELS: VALID_LEVELS,
     OVERLAY_TOGGLE_KEYS: Object.keys(OVERLAY_TOGGLE_KEYS),
+    getExcludedModes: getExcludedModes,
+    setModeCounted: setModeCounted,
     getDetailLevel: getDetailLevel,
     setDetailLevel: setDetailLevel,
     getOverlayToggle: getOverlayToggle,

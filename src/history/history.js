@@ -47,6 +47,97 @@
     });
   }
 
+  function initSupporterPreview() {
+    var toggle = document.getElementById('supporter-preview');
+    var useIcon = document.getElementById('supporter-use-icon');
+    var buy = document.getElementById('supporter-buy');
+    var restore = document.getElementById('supporter-refresh');
+    var login = document.getElementById('supporter-login');
+    function notifyOverlay(id) {
+      overwolf.windows.obtainDeclaredWindow('overlay', function (result) {
+        if (result.success && result.window) overwolf.windows.sendMessage(result.window.id, id, {}, function () {});
+      });
+    }
+    useIcon.addEventListener('change', function () {
+      DejaVuSettings.setPasikIconPreferred(useIcon.checked);
+      notifyOverlay('badge-icon-changed');
+    });
+    login.addEventListener('click', function () { overwolf.profile.openLoginDialog(); });
+    buy.addEventListener('click', function () {
+      buy.disabled = true;
+      DejaVuSupporter.checkout().catch(function () {
+        document.getElementById('supporter-status').textContent = 'Could not open checkout. Please try again.';
+      });
+    });
+    restore.addEventListener('click', function () {
+      DejaVuSupporter.refresh();
+      notifyOverlay('supporter-refresh');
+    });
+    DejaVuSupporter.watch(function (state) {
+      var messages = {
+        setup: 'Supporter purchases are not configured yet.',
+        checking: 'Checking your purchases...',
+        login: 'Sign in to Overwolf to purchase or restore your supporter icon.',
+        ready: state.owned ? 'Thank you for supporting DejaVu! Your Pasik icon is unlocked.' : 'No supporter purchase found for this account.',
+        error: 'Could not verify purchases. Check your connection and try Refresh purchases.'
+      };
+      document.getElementById('supporter-status').textContent = messages[state.status];
+      buy.disabled = !state.canPurchase;
+      restore.disabled = state.status === 'checking' || state.status === 'setup';
+      login.hidden = state.status !== 'login';
+      useIcon.disabled = !DejaVuSupporter.hasAccess();
+      useIcon.checked = DejaVuSettings.isPasikIconPreferred();
+      document.getElementById('supporter-testing').hidden = !DejaVuSupporter.previewAllowed();
+    });
+    DejaVuSupporter.start();
+    function refresh() {
+      toggle.checked = DejaVuSettings.isSupporterPreviewEnabled();
+      useIcon.checked = DejaVuSettings.isPasikIconPreferred();
+    }
+    refresh();
+    window.addEventListener('storage', refresh);
+    toggle.addEventListener('change', function () {
+      DejaVuSettings.setSupporterPreviewEnabled(toggle.checked);
+      DejaVuSettings.setPasikIconPreferred(toggle.checked);
+      refresh();
+      overwolf.windows.obtainDeclaredWindow('overlay', function (result) {
+        if (!result.success || !result.window) return;
+        overwolf.windows.sendMessage(result.window.id, 'badge-icon-changed', {}, function () {});
+      });
+    });
+    DejaVuHotkeys.watch(function (keys) {
+      var label = DejaVuHotkeys.label(keys, 'toggle_overlay') || 'Not set';
+      document.querySelectorAll('[data-badge-hotkey]').forEach(function (el) {
+        el.textContent = label;
+      });
+    });
+  }
+
+  // One checkbox per game mode, built from game-modes.js's list so a new mode
+  // only needs adding there. The overlay reads the setting fresh at each new
+  // sighting, so it needs no message — it applies from the next match.
+  function initModeFilter() {
+    var container = document.getElementById('mode-filter');
+    var excluded = DejaVuSettings.getExcludedModes();
+    DejaVuGameModes.KEYS.forEach(function (key) {
+      var row = document.createElement('div');
+      row.className = 'tier-row';
+      var label = document.createElement('label');
+      var input = document.createElement('input');
+      input.type = 'checkbox';
+      input.checked = excluded.indexOf(key) === -1;
+      input.addEventListener('change', function () {
+        DejaVuSettings.setModeCounted(key, input.checked);
+        logDiag('game mode ' + key + ' ' + (input.checked ? 'counted' : 'excluded'));
+        load();
+      });
+      label.appendChild(input);
+      label.appendChild(document.createTextNode(' ' + DejaVuGameModes.label(key)));
+      row.appendChild(label);
+      container.appendChild(row);
+    });
+  }
+
   function init() {
     DejaVuFileLog.init('history');
     logDiag('history window init start');
@@ -128,6 +219,8 @@
       logDiag('overlay positions reset');
     });
 
+    initSupporterPreview();
+    initModeFilter();
     initTierPicker();
     initOverlayTogglePicker();
     renderHotkeys();
@@ -256,9 +349,18 @@
     logDiag('load: getAllPlayers + getAllRecords start');
     Promise.all([
       DejaVuStorage.getAllPlayers(),
-      DejaVuStorage.getAllRecords()
+      DejaVuStorage.getAllRecords(),
+      DejaVuStorage.getAllExcludedTotals()
     ]).then(function (results) {
-      allPlayers = results[0];
+      // Excluded game modes taken back out of each player's running totals
+      // (see common/game-modes.js). Someone only ever met in excluded modes
+      // drops out of the list, unless you've written notes or tags on them.
+      var excludedTotals = results[2];
+      allPlayers = results[0].map(function (p) {
+        return DejaVuGameModes.applyExclusions(p, excludedTotals[p.battlenet_tag]);
+      }).filter(function (p) {
+        return !p.only_excluded || p.notes || (p.tags && p.tags.length);
+      });
       allRecords = results[1];
       logDiag('load: resolved with ' + allPlayers.length + ' player(s), ' + Object.keys(allRecords).length + ' record(s)');
       render();
@@ -654,6 +756,15 @@
       date.className = 'match-date';
       date.textContent = formatDate(m.timestamp);
       row.appendChild(date);
+
+      var mode = document.createElement('span');
+      mode.className = 'match-mode';
+      mode.textContent = DejaVuGameModes.label(m.mode);
+      if (!m.counted) {
+        row.classList.add('not-counted');
+        row.title = 'Not counted in stats (game mode unticked in Settings)';
+      }
+      row.appendChild(mode);
 
       var side = document.createElement('span');
       if (m.was_teammate === true || m.was_teammate === false) {

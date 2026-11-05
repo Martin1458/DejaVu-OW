@@ -20,7 +20,9 @@
 
 var DejaVuGep = (function () {
   var OVERWATCH_CLASS_ID = 10844;
-  var REQUIRED_FEATURES = ['roster', 'match_info', 'kill_feed'];
+  // game_info (2026-11-05) gates match_info's game_type/game_queue_type as well
+  // as game_info's own game_mode — without it neither ever arrives.
+  var REQUIRED_FEATURES = ['roster', 'match_info', 'kill_feed', 'game_info'];
   var MATCH_EVENT_NAMES = ['kill_feed', 'match_start', 'match_end', 'round_start', 'round_end', 'game_exit'];
 
   var handlers = {};
@@ -176,6 +178,14 @@ var DejaVuGep = (function () {
 
     if (body.match_info && handlers.onMatchInfo) {
       handlers.onMatchInfo(body.match_info, info);
+    }
+
+    // Only game_mode is wanted from game_info — the rest (battle_tag,
+    // game_state, party size) isn't per-match data and shouldn't land on the
+    // encounter row. Sent through the same handler so it gets the same
+    // last-known-good merge as match_info's fields.
+    if (body.game_info && body.game_info.game_mode != null && handlers.onMatchInfo) {
+      handlers.onMatchInfo({ game_mode: body.game_info.game_mode }, info);
     }
   }
 
